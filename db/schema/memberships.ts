@@ -7,7 +7,6 @@ import { teams } from "./teams";
 export const memberships = pgTable(
   "memberships",
   {
-    id: uuid("id").primaryKey(),
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, {
