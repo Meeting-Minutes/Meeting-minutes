@@ -120,42 +120,73 @@ A user row is **global** — one person, one row, regardless of how many orgs th
 |---|---|---|
 | id | uuid PK | |
 | org_id | uuid FK → organizations | |
-| name | text | |
+| name | text | display name shown when creating a meeting |
+| description | text, nullable | optional description for admins |
 | created_by | uuid FK → users | |
 | created_at | timestamp | |
+| updated_at | timestamp | |
 
-**`template_versions`** — templates are versioned so old minutes don't shift under you when a template is edited later
+Templates are collections of ordered sections rather than static HTML or Markdown documents. This allows non-technical administrators to build templates using a visual editor while keeping the storage format frontend-agnostic.
+
+**`template_sections`**
 | column | type | notes |
 |---|---|---|
 | id | uuid PK | |
 | template_id | uuid FK → templates | |
-| version_number | int | |
-| schema | jsonb | the actual template definition — see §6 |
-| created_at | timestamp | |
+| order | int | display order within the template |
+| type | text | component type (`meeting_info`, `attendance`, `agenda`, `rich_text`, `table`, `signature`, etc.) |
+| title | text | section heading shown to users |
+| config | jsonb | section-specific configuration (columns, defaults, options, validation rules, etc.) |
+
+Each section represents a reusable building block. The application knows how to render each `type`; the `config` field customizes its behavior without requiring code changes.
+
+Examples:
+
+- `meeting_info` → no configuration
+- `agenda` → columns, numbering style
+- `table` → column definitions
+- `rich_text` → formatting options
+- `signature` → signer labels
+
+The frontend provides a drag-and-drop template builder that creates and reorders these rows. Administrators never edit JSON directly.
+
+`ponytail:` templates intentionally are **not versioned**. Meetings reference the template that was selected when they were created. If an organization wants to preserve an older layout while making changes, they duplicate the template and edit the copy. This is simpler for users to understand than hidden version history and avoids maintaining multiple internal revisions of the same template.
 
 **`meetings`**
 | column | type | notes |
 |---|---|---|
 | id | uuid PK | |
 | org_id | uuid FK → organizations | |
-| team_id | uuid FK → teams, nullable | null = org-wide meeting |
-| template_version_id | uuid FK → template_versions, **nullable** | null = freeform meeting, no template |
 | title | text | |
 | scheduled_at | timestamp | |
+| continuation_of | uuid FK → meetings | |
 | created_by | uuid FK → users | |
 | grace_period_ends_at | timestamp | computed at creation/approval (§5, edit-lock) |
 | created_at | timestamp | |
+
+**`meeting_teams`**
+| column | type | notes |
+|---|---|---|
+| meeting_id | uuid FK → meetings | |
+| team_id | uuid FK → teams | |
 
 **`minutes`**
 | column | type | notes |
 |---|---|---|
 | id | uuid PK | |
 | meeting_id | uuid FK → meetings, unique | one minutes record per meeting |
-| content | jsonb | field values keyed to the template's schema (or freeform blocks if no template) |
-| status | enum | `draft` \| `approved` |
-| locked | boolean | flips true after grace period (or trigger-computed from `meetings.grace_period_ends_at`) |
+| template_id | uuid FK → templates, **nullable** | null = freeform meeting, no template |
+| status | enum | `draft` \| `published` |
 | updated_by | uuid FK → users | |
 | updated_at | timestamp | |
+
+**`minutes_sections`**
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| minutes_id | uuid FK → minutes | |
+| section_id | uuid FK → template_sections | |
+| content | jsonb | |
 
 **`tags`** / **`meeting_tags`** — org-scoped tag catalog + join table, standard many-to-many.
 
@@ -171,6 +202,7 @@ A user row is **global** — one person, one row, regardless of how many orgs th
 | external_email | text, nullable | |
 | present | boolean | |
 
+TODO: exports
 **`exports`**
 | column | type | notes |
 |---|---|---|
@@ -180,6 +212,7 @@ A user row is **global** — one person, one row, regardless of how many orgs th
 | file_key | text | object storage key, not the file itself |
 | generated_at | timestamp | |
 
+TODO: audit log
 **`audit_log`**
 | column | type | notes |
 |---|---|---|
@@ -245,6 +278,7 @@ Not a separate concept — it falls out of §3/§4 directly:
 Templates are stored as **JSON schema**, not as static files or hardcoded page layouts — this is what makes "new templates without code changes" and "fully editable" both true at once.
 
 A `template_versions.schema` looks like:
+// DEPRECATED:
 
 ```json
 {

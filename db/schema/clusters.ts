@@ -1,11 +1,10 @@
 import { pgTable, uuid, varchar } from "drizzle-orm/pg-core";
 import { organizations } from "./organizations";
 
-export const tags = pgTable("tags", {
+export const clusters = pgTable("clusters", {
   id: uuid("id").primaryKey(),
   orgID: uuid("orgID").references(() => organizations.id, {
-    // if null it is global tags
     onDelete: "cascade",
   }),
-  name: varchar("name", { length: 255 }).notNull(),
+  name: varchar("name", { length: 255 }),
 });
