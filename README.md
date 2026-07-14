@@ -96,27 +96,14 @@ Things flagged during planning that need a decision before/while building:
 
 If you have opinions on any of these, open an issue — the design is still fluid.
 
-## Roadmap
-
-- [ ] Finalize data model (meetings, minutes, templates, tags, roles)
-- [ ] RBAC design (department-level, meeting-level, sub-committee-level)
-- [ ] Template engine (creation + rendering + freeform fallback)
-- [ ] Tagging + clustering + related-minutes surfacing
-- [ ] Scheduling + email notifications
-- [ ] Attendance module
-- [ ] Bulk import/export (contacts + minutes)
-- [ ] Edit-lock/grace-period enforcement
-- [ ] Nepali/English localization (UI + stored content)
-- [ ] Agenda generator (raw notes → structured Nepali agenda)
-
 ## Tech Stack
 
-*Not yet decided — development hasn't started.* This section will be filled in once the stack is chosen.
+|- Next.js v16.2
+|- PostgreSQL v16
+|- Docker v29.6
+|- Docker Compose v5.3.1
+|- Bun v1.3.14
 
 ## Contributing
 
 This project is in early design. Feedback on the requirements above — especially the [Open Questions](#open-questions) — is welcome before implementation begins.
-
-## License
-
-*TBD.*
