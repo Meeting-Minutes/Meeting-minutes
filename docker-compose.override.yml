@@ -1,6 +1,0 @@
-services:
-  api:
-    volumes:
-      - ./backend:/app
-      # - /app/node_modules
-    command: bun --watch index.ts

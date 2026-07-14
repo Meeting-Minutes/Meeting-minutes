@@ -6,8 +6,72 @@ A template-based meeting minutes management system for **any organization made o
 
 Originally scoped to a single university department, the design is now **organization-agnostic**: any group that runs recurring meetings and wants a searchable, role-controlled minutes archive can deploy it — with no assumptions baked in about who the roles are or what they're called.
 
+## Getting Started
+
+### Prerequisites
+
+- [Bun](https://bun.sh) installed
+- [Docker](https://docs.docker.com/get-docker/) + Docker Compose installed
+
+### Setup
+
+```bash
+# 1. Install dependencies
+bun install
+
+# 2. Copy env template and fill in real values if needed (defaults work for local dev)
+cp .env.example .env
+
+# 3. Start Postgres
+docker compose up -d
+
+# 4. Apply database migrations
+bun drizzle-kit migrate
+
+# 5. Verify the DB connection works end-to-end
+bun run db:check
+```
+
+You should see `DB round-trip works: insert, select, delete all confirmed`. If not, confirm the container is actually up and bound to the port in your `.env`:
+
+```bash
+docker compose ps
+```
+
+(A common local issue: another process already holding port 5432. Check with `docker ps --filter "publish=5432"` or `sudo lsof -i :5432`, then stop/remap as needed.)
+
+### Run the app
+
+```bash
+bun dev
+```
+
+Visit `http://localhost:3000`.
+
+### Schema changes
+
+Whenever you edit a file in `db/schema/`:
+
+```bash
+bun drizzle-kit generate   # generates a new migration from the schema diff
+bun drizzle-kit migrate    # applies it to your local database
+```
+
+Generated migration files (`db/migrations/`) are committed to git — they're the versioned schema history, not build output.
+
+### Useful scripts
+
+| Command                    | Does                                                             |
+| -------------------------- | ---------------------------------------------------------------- |
+| `bun dev`                  | Run the Next.js app locally                                      |
+| `bun drizzle-kit generate` | Generate a migration from schema changes                         |
+| `bun drizzle-kit migrate`  | Apply pending migrations                                         |
+| `bun drizzle-kit studio`   | Open Drizzle Studio to browse the DB                             |
+| `bun run db:check`         | Sanity-check the DB connection (insert/select/delete round trip) |
+
 ## Table of Contents
 
+- [Getting Started](#getting-started)
 - [Why this exists](#why-this-exists)
 - [Core concepts](#core-concepts)
 - [Roles & Permissions](#roles--permissions)
@@ -147,7 +211,7 @@ If you have opinions on any of these, open an issue — the design is still flui
 
 - **Runtime**: [Bun](https://bun.sh)
 - **Framework**: [Next.js](https://nextjs.org)
-- **Database**: [PostgreSQL](https://www.postgresql.org), run via [Docker Compose](https://docs.docker.com/compose/) for local dev
+- **Database**: PostgreSQL, run via [Docker Compose](https://docs.docker.com/compose/) for local dev
 - **ORM**: [Drizzle](https://orm.drizzle.team) (schema + migrations via `drizzle-kit`)
 
 Nothing beyond this is decided yet (hosting, email delivery, auth provider, etc.) — those will be filled in as they're chosen.
