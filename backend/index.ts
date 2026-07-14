@@ -1,5 +1,4 @@
 import express from "express";
-// import { SQL } from "bun";
 import postgres from "postgres";
 
 const app = express();
