@@ -36,3 +36,29 @@ Rules:
 - Mark deliberate simplifications that cut a real corner with a known ceiling (global lock, O(n²) scan, naive heuristic) with a `ponytail:` comment naming the ceiling and upgrade path.
 
 Not lazy about: understanding the problem (read it fully and trace the real flow before picking a rung, a small diff you don't understand is just laziness dressed up as efficiency), input validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs (the platform is never the spec ideal, a clock drifts, a sensor reads off), anything explicitly requested. Lazy code without its check is unfinished: non-trivial logic leaves ONE runnable check behind, the smallest thing that fails if the logic breaks (an assert-based demo/self-check or one small test file; no frameworks, no fixtures). Trivial one-liners need no test.
+
+---
+
+# Project context
+
+Org-agnostic minutes system. Specs: `README.md` (requirements), `DESIGN.md` (schema, permission query, template/PDF pipeline). Read `DESIGN.md` before touching a table or an auth check — don't re-derive or duplicate what's already there.
+
+**Stack**: Bun (not npm/yarn/pnpm) · Next.js App Router (breaking-changes notice above — verify against `node_modules/next/dist/docs/`, don't assume) · Postgres via Docker Compose (local only) · Drizzle (`db/schema/`, `drizzle-kit` migrations).
+
+```bash
+bun install && docker compose up -d
+bun drizzle-kit generate   # after editing db/schema/*
+bun drizzle-kit migrate
+bun run db:check           # DB sanity check
+bun dev
+```
+
+Troubleshooting (port 5432, etc.): README → Getting Started.
+
+**Structure**: `db/schema/` = source of truth, one file per table. `db/migrations/` = generated, never hand-edit. `lib/permissions.ts` = the only place auth checks live — extend it, don't add a second path. `app/`: `(group)` invisible in URL, `[param]` dynamic, `route.ts` = API not page.
+
+**Before adding a table or permission check**: it's probably already in `DESIGN.md` / `db/schema/index.ts` / `lib/permissions.ts` — check, then grep, before writing.
+
+**Non-negotiable**: every org/team-scoped query filters by `org_id`/`team_id` from the resolved membership, never a client-supplied value. Missing filter = data leak, not style — trust-boundary exemption applies, don't shortest-diff this away.
+
+**Templates**: JSON schema, fixed field types (`DESIGN.md`). New template = a data row, not code. New field type = code, and check the existing types first.
