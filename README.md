@@ -80,6 +80,7 @@ Access is role-based per meeting and per minute — a member secretary or sub-co
 8. **Role-scoped data isolation** — A sub-committee secretary should never be able to see or accidentally query another sub-committee's or department's private minutes, even by URL/ID guessing.
 9. **Exportable in a stable format** — Bulk-exported minutes should use a template format (e.g. PDF/DOCX) that stays readable and printable for years, independent of which version of the system generated it.
 10. **Low operational burden** — Given this is run by department staff (not dedicated IT), backups, updates, and routine maintenance should be simple enough for a non-specialist secretary/admin to keep running.
+11. **Batch users creation** - Provide a feature to the admin to add users in a batch providing batch user details in a CSV format. Also, per the committee , a secretary should have option to add guest members in batch.
 
 ## Open Questions
 
