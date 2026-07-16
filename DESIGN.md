@@ -37,11 +37,12 @@ organizations
        └─ role_permissions → permissions (fixed catalog)
   └─ memberships (user × org × team × role)
   └─ templates
-       └─ template_versions
-  └─ meetings (belongs to org, optionally a team)
+       └─ template_sections (ordered, typed)
+  └─ meetings (belongs to org, optionally a team; optional template_id)
        └─ meeting_tags → tags (org-scoped)
        └─ attendance (user OR external name/email)
-       └─ minutes (one main record, references template_version)
+       └─ minutes (one per meeting, shares meetings.id, references template)
+            └─ minutes_sections (content per template_section)
             └─ exports (generated files)
   └─ clusters
        └─ cluster_meetings → meetings
@@ -157,12 +158,15 @@ The frontend provides a drag-and-drop template builder that creates and reorders
 |---|---|---|
 | id | uuid PK | |
 | org_id | uuid FK → organizations | |
+| template_id | uuid FK → templates, nullable, `set null` on delete | template picked when the meeting was scheduled |
 | title | text | |
 | scheduled_at | timestamp | |
 | continuation_of | uuid FK → meetings | |
 | created_by | uuid FK → users | |
 | grace_period_ends_at | timestamp | computed at creation/approval (§5, edit-lock) |
 | created_at | timestamp | |
+
+`ponytail:` `template_id` lives on both `meetings` and `minutes` — `meetings.template_id` is the pick made at scheduling time (what the editor renders before minutes exist); `minutes.template_id` is what actually got used once minutes were created. They can diverge if the meeting's template is changed after minutes already exist, and that's intentional — `minutes.template_id` is the immutable record, `meetings.template_id` is just the current default for that meeting's editor.
 
 **`meeting_teams`**
 | column | type | notes |
@@ -173,20 +177,20 @@ The frontend provides a drag-and-drop template builder that creates and reorders
 **`minutes`**
 | column | type | notes |
 |---|---|---|
-| id | uuid PK | |
-| meeting_id | uuid FK → meetings, unique | one minutes record per meeting |
+| id | uuid PK, FK → meetings.id | shares the meeting's id — one minutes record per meeting, enforced structurally rather than by a separate unique column |
 | template_id | uuid FK → templates, **nullable** | null = freeform meeting, no template |
 | status | enum | `draft` \| `published` |
-| updated_by | uuid FK → users | |
+| created_at | timestamp | |
 | updated_at | timestamp | |
+| published_at | timestamp, nullable | |
 
-**`minutes_sections`**
+**`minutes_sections`** — the per-section content for a minutes record; this is what replaced the old single `minutes.content` JSON blob
 | column | type | notes |
 |---|---|---|
-| id | uuid PK | |
-| minutes_id | uuid FK → minutes | |
-| section_id | uuid FK → template_sections | |
-| content | jsonb | |
+| minutes_id | uuid FK → minutes, `cascade` on delete | |
+| section_id | uuid FK → template_sections, `cascade` on delete | |
+| content | jsonb, not null | shape depends on the section's `type` — a `rich_text` section's content is a doc blob, a `table` section's content is rows, etc. |
+| — | | composite PK (minutes_id, section_id) — one content row per section per minutes record |
 
 **`tags`** / **`meeting_tags`** — org-scoped tag catalog + join table, standard many-to-many.
 
@@ -275,43 +279,33 @@ Not a separate concept — it falls out of §3/§4 directly:
 
 ## 6. Template format
 
-Templates are stored as **JSON schema**, not as static files or hardcoded page layouts — this is what makes "new templates without code changes" and "fully editable" both true at once.
+Templates are **rows, not a JSON blob**: a `templates` row owns an ordered list of `template_sections` rows, each with a fixed `type` and a per-section `config` JSON — this is what makes "new templates without code changes" and "fully editable" both true at once, and it's what a **template builder UI** (drag/reorder sections, add/remove sections) actually manipulates: reordering writes new `order` values, adding a section inserts a row, editing a section's options patches its `config`. Non-technical admins never touch raw JSON.
 
-A `template_versions.schema` looks like:
-// DEPRECATED:
+A template with its sections looks like (rows shown as JSON for readability, not the storage format):
 
 ```json
 {
+  "template": { "id": "…", "name": "Standard Committee Meeting" },
   "sections": [
-    { "id": "meta", "type": "meeting_meta", "label": "Meeting Info" },
-    { "id": "attendees", "type": "attendance_table", "label": "Attendance" },
-    {
-      "id": "agenda",
-      "type": "list",
-      "label": "Agenda Items",
-      "item_fields": [
-        { "id": "topic", "type": "text", "label": "Topic" },
-        { "id": "discussion", "type": "richtext", "label": "Discussion" },
-        { "id": "decision", "type": "richtext", "label": "Decision" }
-      ]
-    },
-    { "id": "signature", "type": "signature_block", "label": "Approved By" }
+    { "id": "s1", "order": 0, "type": "meeting_info", "title": "Meeting Info", "config": null },
+    { "id": "s2", "order": 1, "type": "attendance", "title": "Attendance", "config": null },
+    { "id": "s3", "order": 2, "type": "agenda", "title": "Agenda Items", "config": { "columns": ["topic", "discussion", "decision"] } },
+    { "id": "s4", "order": 3, "type": "signature", "title": "Approved By", "config": { "signer_labels": ["Chair", "Secretary"] } }
   ]
 }
 ```
 
-- `type` maps to a small, fixed set of renderable field types the frontend knows how to draw and edit: `text`, `richtext`, `list`, `table`, `attendance_table`, `signature_block`, `meeting_meta`, etc. New _templates_ are just new arrangements of these — no code change. A genuinely new field _type_ is a code change, but that's rare compared to arranging existing types into new templates.
-- A **template builder UI** (drag/reorder sections, add/remove fields) writes this JSON — non-technical admins never touch raw JSON directly.
-- `minutes.content` is a JSON object keyed by the same `id`s (`{ "agenda": [...], "signature": {...} }`), so rendering is a straightforward "walk the schema, pull the matching content" operation — same code path whether rendering to screen, to PDF, or to search-index text.
-- **Freeform minutes** (no template): `template_version_id` is null, `minutes.content` is a simpler unstructured shape (e.g. an array of freeform rich-text blocks). Export/search code branches once at read time on "does this minutes have a template" — not scattered throughout the codebase.
-- **Versioning matters here**: once a meeting is created against `template_version_id = 3`, editing the template later creates version 4 — old minutes keep rendering against version 3 forever. Without this, editing a template retroactively could corrupt the meaning of already-approved minutes, which conflicts directly with the durability/immutability NFRs in the README.
+- `type` maps to a small, fixed set of renderable component types the frontend knows how to draw and edit: `meeting_info`, `attendance`, `agenda`, `rich_text`, `table`, `signature`. New _templates_ are just new arrangements/configs of these — no code change. A genuinely new `type` is a code change, but that's rare compared to arranging existing types into new templates.
+- **Content lives per-section**, not as one big blob: each `minutes_sections` row is keyed by `(minutes_id, section_id)` and holds that one section's `content` jsonb. Rendering a minutes record is "walk this minutes' template's `template_sections` in `order`, join each to its `minutes_sections` row by `section_id`, render `content` per that section's `type`" — same code path for screen, PDF, and search-index text. This also makes partial-save and per-section audit/diffing cheap: editing the agenda section touches one row, not the whole document.
+- **No versioning** — see the `ponytail:` note in §2 under `template_sections`. A meeting's minutes keep their `template_id` even if the template is edited later (adding/removing/reordering sections), so an edited template can, in principle, desync from minutes that already have `minutes_sections` content for a since-removed `section_id`. This is accepted for now (see §8) on the same YAGNI logic as the rest of §2 — admins are expected to duplicate a template before making a breaking change to it, not edit shared templates out from under live minutes.
+- **Freeform minutes** (no template, `minutes.template_id` null): there's no `template_sections` row to key `minutes_sections.section_id` off of, since that column is part of the composite primary key and can't be null. This is an open gap, not a solved case — see §8.
 
 ---
 
 ## 7. Minutes → PDF pipeline
 
 ```
-template_version.schema + minutes.content
+template_sections (ordered) + minutes_sections (content per section)
         │
         ▼
   render to HTML  (server-side — walk schema, fill content, standard HTML/CSS template)
@@ -337,6 +331,7 @@ template_version.schema + minutes.content
 
 Carried over / sharpened from the README's open questions, now that they're schema-shaped decisions:
 
+- **Freeform minutes storage** (§6) — `minutes_sections.section_id` is part of a composite PK, so it can't be null, which means a template-less minutes record currently has nowhere to put content. Options: (a) a small set of implicit "virtual" template_sections seeded per org for freeform use, (b) a nullable `minutes.content` column that's only used in the freeform case, sitting alongside `minutes_sections` for the templated case, or (c) require every org to have a default minimal template and drop "freeform" as a concept. Needs a decision before freeform meetings are implemented.
 - **`meeting_overrides`** (§5) — confirm this is the right shape vs. just allowing `memberships.team_id` to reference a meeting too (would require `memberships` to know about two different parent types — messier; the separate-table approach above is recommended).
 - **External members with accounts** — if "yes" (per README open question), they get a normal `users` row + `memberships` row with a deliberately narrow role. If "no," `attendance.external_name/email` (already in the schema above) is sufficient and no `users` row is created.
 - **Permission catalog growth** — is the fixed `permissions` table enough, or will custom-permission-per-org ever be needed? Recommend staying fixed until an actual use case demands otherwise (YAGNI).
