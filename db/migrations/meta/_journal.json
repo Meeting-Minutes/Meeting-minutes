@@ -8,6 +8,13 @@
       "when": 1784038235108,
       "tag": "0000_military_darwin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784388620825,
+      "tag": "0001_huge_firebrand",
+      "breakpoints": true
     }
   ]
 }
