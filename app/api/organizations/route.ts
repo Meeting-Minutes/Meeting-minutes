@@ -12,6 +12,7 @@ export async function GET() {
     .select({
       id: organizations.id,
       name: organizations.name,
+      description: organizations.description,
       slug: organizations.slug,
       createdAt: organizations.createdAt,
     })
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { name } = await req.json();
+  const { name, description } = await req.json();
   if (!name || typeof name !== "string") {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
 
   const [org] = await db
     .insert(organizations)
-    .values({ name, slug })
+    .values({ name, description: description || null, slug })
     .returning();
 
   await db.insert(memberships).values({

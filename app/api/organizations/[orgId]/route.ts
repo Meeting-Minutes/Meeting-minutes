@@ -30,7 +30,7 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
-  const { name } = await req.json();
+  const { name, description } = await req.json();
 
   if (!name || typeof name !== "string") {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -39,7 +39,7 @@ export async function PATCH(
   const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
   const [org] = await db
     .update(organizations)
-    .set({ name, slug })
+    .set({ name, description: description || null, slug })
     .where(eq(organizations.id, orgId))
     .returning();
 
