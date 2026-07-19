@@ -114,7 +114,8 @@ A user row is **global** — one person, one row, regardless of how many orgs th
 | team_id | uuid FK → teams, **nullable** | null = org-wide membership |
 | role_id | uuid FK → roles | must belong to the same org_id (app-level check) |
 | created_at | timestamp | |
-| — | | unique (user_id, org_id, team_id) |
+| — | | unique (user_id, org_id) WHERE team_id IS NULL | org-wide: one per user per org |
+| — | | unique (user_id, org_id, team_id) WHERE team_id IS NOT NULL | per-team: one per user per org per team |
 
 **`templates`**
 | column | type | notes |
