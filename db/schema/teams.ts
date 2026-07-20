@@ -16,6 +16,7 @@ export const teams = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     parentTeamId: uuid("parent_team_id"),
     name: text("name").notNull(),
+    description: text("description"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

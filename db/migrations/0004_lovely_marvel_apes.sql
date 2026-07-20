@@ -1,0 +1,3 @@
+ALTER TABLE "memberships" DROP CONSTRAINT "memberships_user_id_organization_id_team_id_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "unique_membership_org_wide" ON "memberships" USING btree ("user_id","organization_id") WHERE "memberships"."team_id" is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "unique_membership_per_team" ON "memberships" USING btree ("user_id","organization_id","team_id") WHERE "memberships"."team_id" is not null;
