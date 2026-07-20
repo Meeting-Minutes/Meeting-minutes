@@ -140,7 +140,7 @@ export function validateRichText(raw: unknown, config?: RichTextConfig): RichTex
 
 // --- rendering (screen preview + PDF share this path) ----------------------
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
