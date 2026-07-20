@@ -1,8 +1,9 @@
 // Self-check for lib/render-document.ts — run with `bun run lib/render-document.check.ts`.
 // No framework: plain asserts. Exits non-zero on the first failure.
+// Covers assembly + trust-boundary validation only; HTML/PDF rendering is a
+// separate later concern and is not in this module.
 import {
   assembleRenderDocument,
-  renderDocument,
   RenderDocumentError,
   type AssembleInput,
   type TemplateSectionRow,
@@ -34,7 +35,7 @@ function build(sections: TemplateSectionRow[], content: Record<string, unknown>)
   return { minutesId: "m1", status: "draft", meeting, sections, contentBySectionId: content };
 }
 
-// --- happy path: one of every section type, assembled + rendered -----------
+// --- happy path: one of every section type assembles into the envelope -----
 const full = build(
   [
     { id: "s1", order: 0, type: "meeting_info", title: "Info", config: null },
@@ -55,14 +56,11 @@ const full = build(
 );
 const doc = assembleRenderDocument(full);
 ok(doc.version === 1 && doc.sections.length === 6, "assembles all 6 sections");
-const html = renderDocument(doc);
-ok(html.includes("<dl class=\"meeting-info\"><dt>Date</dt><dd>2026-07-20</dd>"), "meeting_info renders fields");
-ok(html.includes("☑") && html.includes("☐"), "attendance renders present/absent boxes");
-ok(html.includes("<th>#</th>") && html.includes("<td>1</td>"), "agenda is numbered");
-const tableHtml = html.slice(html.indexOf("section-table"));
-ok(!tableHtml.slice(0, tableHtml.indexOf("</section>")).includes("<th>#</th>"), "table is not numbered");
-ok(html.includes("<strong>hi</strong>"), "rich_text delegates to renderRichText");
-ok(html.includes("Chair") && html.includes("2026-07-21"), "signature renders label + signedAt");
+ok(doc.minutesId === "m1" && doc.meeting.org === "Acme", "carries envelope metadata");
+ok(doc.sections.every((s, i) => s.content.type === s.type), "each section keeps its own typed content");
+const s3 = doc.sections[2];
+ok(s3.content.type === "agenda" && s3.content.columns.length === 2 && s3.content.data.rows.length === 2, "agenda content + columns validated");
+ok(doc.sections[3].content.type === "rich_text", "rich_text delegates to its own validator and keeps the doc");
 
 // --- ordering: out-of-order rows sort by `order` ---------------------------
 const ordered = assembleRenderDocument(
@@ -76,18 +74,7 @@ const ordered = assembleRenderDocument(
 );
 ok(ordered.sections[0].id === "a" && ordered.sections[1].id === "b", "sorts sections by order");
 
-// --- trust boundary: escaping + column filtering ---------------------------
-const escaped = renderDocument(
-  assembleRenderDocument(
-    build(
-      [{ id: "s1", order: 0, type: "meeting_info", title: "<x>", config: null }],
-      { s1: { fields: [{ label: "k", value: "<script>alert(1)</script>" }] } },
-    ),
-  ),
-);
-ok(!escaped.includes("<script>") && escaped.includes("&lt;script&gt;"), "escapes untrusted text");
-ok(escaped.includes("&lt;x&gt;"), "escapes section title");
-
+// --- trust boundary: undeclared columns dropped ----------------------------
 const filtered = assembleRenderDocument(
   build(
     [{ id: "s1", order: 0, type: "table", title: "T", config: { columns: ["a"] } }],
@@ -101,26 +88,27 @@ ok(
   "drops undeclared columns from rows",
 );
 
+// --- present coercion: non-true is false -----------------------------------
+const att = assembleRenderDocument(
+  build([{ id: "s1", order: 0, type: "attendance", title: "A", config: null }], { s1: { attendees: [{ name: "X", present: "yes" }] } }),
+);
+ok(att.sections[0].content.type === "attendance" && att.sections[0].content.data.attendees[0].present === false, "coerces non-true `present` to false");
+
 // --- rejection cases -------------------------------------------------------
 throws(() => assembleRenderDocument(build([{ id: "s1", order: 0, type: "bogus", title: "X", config: null }], { s1: {} })), "rejects unknown section type");
 throws(() => assembleRenderDocument(build([{ id: "s1", order: 0, type: "meeting_info", title: "X", config: null }], {})), "rejects missing content");
 throws(() => assembleRenderDocument(build([{ id: "s1", order: 0, type: "agenda", title: "X", config: null }], { s1: { rows: [] } })), "rejects rows section with no columns config");
 throws(() => assembleRenderDocument(build([{ id: "s1", order: 0, type: "attendance", title: "X", config: null }], { s1: { attendees: [{ present: true }] } })), "rejects attendee missing name");
 throws(() => assembleRenderDocument(build([{ id: "s1", order: 0, type: "meeting_info", title: "X", config: null }], { s1: { fields: [{ label: 3, value: "x" }] } })), "rejects non-string field label");
-// rich_text errors surface as RichTextError (subclass? no) — assembler wraps via validateRichText which throws RichTextError, not RenderDocumentError:
+// rich_text errors surface from the delegated validator (RichTextError, not
+// RenderDocumentError) — any throw is correct here.
 n++;
 try {
   assembleRenderDocument(build([{ id: "s1", order: 0, type: "rich_text", title: "X", config: null }], { s1: { type: "not-a-doc" } }));
   console.error("FAIL (expected throw): rejects malformed rich_text");
   process.exit(1);
 } catch {
-  /* RichTextError from the delegated validator — any throw is correct here */
+  /* delegated validator threw — correct */
 }
-
-// --- present coercion: non-true is false -----------------------------------
-const att = assembleRenderDocument(
-  build([{ id: "s1", order: 0, type: "attendance", title: "A", config: null }], { s1: { attendees: [{ name: "X", present: "yes" }] } }),
-);
-ok(att.sections[0].content.type === "attendance" && att.sections[0].content.data.attendees[0].present === false, "coerces non-true `present` to false");
 
 console.log(`ok — ${n} checks passed`);

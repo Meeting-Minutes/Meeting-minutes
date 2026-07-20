@@ -5,16 +5,14 @@
 // Why a separate envelope instead of feeding the engine raw rows: the engine
 // should walk ONE self-contained, already-validated document — not re-join
 // tables, re-sort by `order`, or trust client JSON at render time. Assembly
-// happens once (validating untrusted content at the trust boundary); rendering
-// is then a pure, deterministic pass shared by screen preview and PDF.
+// happens once, at the trust boundary; the HTML/PDF render pass over this
+// document is built separately (DESIGN §7) and consumes it as-is.
 //
 // Each of the 6 section types has its own content contract below. `rich_text`
 // reuses the existing model in ./rich-text — this file does not re-derive it.
 
 import {
   validateRichText,
-  renderRichText,
-  escapeHtml,
   type RichTextDoc,
   type RichTextConfig,
 } from "./rich-text";
@@ -208,57 +206,4 @@ export function assembleRenderDocument(input: AssembleInput): RenderDocument {
     meeting: input.meeting,
     sections,
   };
-}
-
-// --- rendering (screen preview + PDF share this path, DESIGN §7) ------------
-
-const th = (c: Column) => `<th>${escapeHtml(c.label)}</th>`;
-const cell = (v: string) => `<td>${escapeHtml(v)}</td>`;
-
-function renderRows(columns: Column[], rows: Record<string, string>[], numbered: boolean): string {
-  const head = `<thead><tr>${numbered ? "<th>#</th>" : ""}${columns.map(th).join("")}</tr></thead>`;
-  const body = rows
-    .map((r, i) => `<tr>${numbered ? `<td>${i + 1}</td>` : ""}${columns.map((c) => cell(r[c.key] ?? "")).join("")}</tr>`)
-    .join("");
-  return `<table><colgroup></colgroup>${head}<tbody>${body}</tbody></table>`;
-}
-
-function renderContent(c: SectionContent): string {
-  switch (c.type) {
-    case "meeting_info":
-      return `<dl class="meeting-info">${c.data.fields
-        .map((f) => `<dt>${escapeHtml(f.label)}</dt><dd>${escapeHtml(f.value)}</dd>`)
-        .join("")}</dl>`;
-    case "attendance":
-      return `<table class="attendance"><thead><tr><th>Name</th><th>Role</th><th>Present</th></tr></thead><tbody>${c.data.attendees
-        .map((a) => `<tr>${cell(a.name)}${cell(a.role ?? "")}<td>${a.present ? "☑" : "☐"}</td></tr>`)
-        .join("")}</tbody></table>`;
-    case "agenda":
-      return renderRows(c.columns, c.data.rows, true);
-    case "table":
-      return renderRows(c.columns, c.data.rows, false);
-    case "rich_text":
-      return renderRichText(c.data);
-    case "signature":
-      return `<div class="signatures">${c.data.signatures
-        .map(
-          (s) =>
-            `<div class="signature"><div class="signature-name">${escapeHtml(s.name ?? "")}</div>` +
-            `<div class="signature-label">${escapeHtml(s.label)}${s.signedAt ? ` — ${escapeHtml(s.signedAt)}` : ""}</div></div>`,
-        )
-        .join("")}</div>`;
-  }
-}
-
-// Render the assembled document to an HTML fragment (sections in order). The PDF
-// pipeline wraps this in its page shell + print CSS; the screen preview reuses it
-// verbatim. Text is escaped here; structure was validated at assembly time.
-export function renderDocument(doc: RenderDocument): string {
-  return doc.sections
-    .map(
-      (s) =>
-        `<section class="section section-${s.type}" data-section-id="${escapeHtml(s.id)}">` +
-        `<h2>${escapeHtml(s.title)}</h2>${renderContent(s.content)}</section>`,
-    )
-    .join("\n");
 }
