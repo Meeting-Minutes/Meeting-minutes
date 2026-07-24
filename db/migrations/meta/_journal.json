@@ -15,6 +15,20 @@
       "when": 1784892700073,
       "tag": "0001_unknown_richard_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785200000000,
+      "tag": "0002_fix_meetings",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784900761321,
+      "tag": "0003_familiar_jean_grey",
+      "breakpoints": true
     }
   ]
 }
