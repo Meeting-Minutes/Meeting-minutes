@@ -32,10 +32,16 @@ export async function seedDemo() {
 
   const teamNames = ["Engineering", "Design", "Marketing", "Operations"];
   for (const name of teamNames) {
+    const teamId = randomUUID();
     await db.insert(teams).values({
-      id: randomUUID(),
+      id: teamId,
       orgId,
       name,
+    }).onConflictDoNothing();
+    await db.insert(memberships).values({
+      userId: user.id,
+      organizationId: orgId,
+      teamId,
     }).onConflictDoNothing();
   }
 

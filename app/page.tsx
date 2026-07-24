@@ -7,6 +7,7 @@ type Org = { id: string; name: string; description?: string | null; slug: string
 type Team = { id: string; name: string; description?: string | null };
 type User = { id: string; email: string; name: string };
 type Member = { id: string; userId: string; teamId: string | null; createdAt: string; user: User };
+type Meeting = { id: string; title: string; description: string | null; scheduledAt: string; location: string | null; createdAt: string; creator: { id: string; name: string } | null };
 
 function ModalOverlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
@@ -163,6 +164,15 @@ export default function Home() {
   const [error, setError] = useState("");
   const [memberError, setMemberError] = useState("");
   const [addEmail, setAddEmail] = useState("");
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [meetingTitle, setMeetingTitle] = useState("");
+  const [meetingDate, setMeetingDate] = useState("");
+  const [meetingTime, setMeetingTime] = useState("");
+  const [meetingLocation, setMeetingLocation] = useState("");
+  const [meetingDescription, setMeetingDescription] = useState("");
+  const [scheduling, setScheduling] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -212,6 +222,13 @@ export default function Home() {
       .then((r) => (r.ok ? r.json() : []))
       .then(setMembers);
   }, [activeOrgId, activeTeamId]);
+
+  useEffect(() => {
+    if (!activeTeamId) { setMeetings([]); return; }
+    fetch(`/api/teams/${activeTeamId}/meetings`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setMeetings);
+  }, [activeTeamId]);
 
   function selectOrg(orgId: string) {
     setActiveOrgId(orgId);
@@ -312,6 +329,25 @@ export default function Home() {
     if (res.ok) fetchMembers(activeOrgId, activeTeamId ?? undefined);
   }
 
+  async function scheduleMeeting() {
+    if (!activeTeamId || !meetingTitle.trim() || !meetingDate || !meetingTime) return;
+    setError(""); setScheduling(true);
+    const scheduledAt = `${meetingDate}T${meetingTime}:00`;
+    const res = await fetch(`/api/teams/${activeTeamId}/meetings`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: meetingTitle.trim(), description: meetingDescription.trim() || null, scheduledAt, location: meetingLocation.trim() || null }),
+    });
+    setScheduling(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "Failed to schedule meeting"); return;
+    }
+    const meeting = await res.json();
+    setMeetings((prev) => [meeting, ...prev]);
+    setShowSchedule(false);
+    setMeetingTitle(""); setMeetingDescription(""); setMeetingDate(""); setMeetingTime(""); setMeetingLocation("");
+  }
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
@@ -350,9 +386,12 @@ export default function Home() {
       {/* Channel sidebar */}
       <aside className="w-60 bg-bg-secondary flex flex-col shrink-0">
         <div className="h-12.25 flex items-center px-4 border-b border-border/50 shrink-0">
-          <h2 className="text-[15px] font-semibold text-text-normal truncate">
+          <button
+            onClick={() => setActiveTeamId(null)}
+            className="text-[15px] font-semibold text-text-normal truncate hover:text-accent transition-colors w-full text-left"
+          >
             {activeOrg?.name || "Minutes"}
-          </h2>
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto px-2 py-3">
           {activeOrgId && (
@@ -416,8 +455,14 @@ export default function Home() {
         <div className="frost h-12.25 border-b border-border/50 flex items-center px-5 shrink-0 sticky top-0 z-10">
           {activeTeam ? (
             <>
-              <span className="text-text-muted mr-1.5 text-lg font-semibold">#</span>
-              <span className="font-semibold text-[15px] text-text-normal">{activeTeam.name}</span>
+              <button
+                onClick={() => setActiveTeamId(null)}
+                className="text-text-muted hover:text-text-normal transition-colors text-sm font-semibold"
+              >
+                {activeOrg?.name}
+              </button>
+              <span className="text-text-muted mx-2 text-sm">/</span>
+              <span className="font-semibold text-[15px] text-text-normal"># {activeTeam.name}</span>
               <button
                 onClick={() => { setError(""); setEditingTeam(activeTeam); }}
                 className="ml-auto text-xs text-text-muted hover:text-text-normal transition-colors px-2 py-1 rounded-md hover:bg-surface/50"
@@ -427,7 +472,6 @@ export default function Home() {
             </>
           ) : activeOrg ? (
             <>
-              <span className="text-text-muted mr-1.5 text-lg font-semibold">#</span>
               <span className="font-semibold text-[15px] text-text-normal">{activeOrg.name}</span>
               <button
                 onClick={() => { setError(""); setEditingOrg(activeOrg); }}
@@ -442,111 +486,257 @@ export default function Home() {
         </div>
 
         {/* Content area */}
-        <div className="flex-1 overflow-y-auto">
-          {!user ? (
-            <div className="max-w-md mx-auto mt-[15vh] text-center px-4">
-              <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-5">
-                <span className="text-accent text-xl font-bold">M</span>
-              </div>
-              <h1 className="text-2xl font-bold text-text-normal">Minutes</h1>
-              <p className="text-sm text-text-muted mt-2 leading-relaxed">
-                Meeting minutes management for your organization.
-              </p>
-            </div>
-          ) : !activeOrgId ? (
-            <div className="max-w-md mx-auto mt-[15vh] text-center px-4">
-              <h1 className="text-2xl font-bold text-text-normal">Welcome, {user.name}</h1>
-              <p className="text-sm text-text-muted mt-2 leading-relaxed">
-                Create an organization to start managing meetings and minutes.
-              </p>
-              <button
-                onClick={() => { setError(""); setShowNewOrg(true); }}
-                className="mt-6 px-6 py-2.5 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-lg transition-all"
-              >
-                Create organization
-              </button>
-            </div>
-          ) : activeTeam ? (
-            <div className="max-w-3xl mx-auto px-6 py-8 space-y-5">
-              <div>
-                <h1 className="text-xl font-bold text-text-normal"># {activeTeam.name}</h1>
-                {activeTeam.description && (
-                  <p className="text-sm text-text-muted mt-1 leading-relaxed">{activeTeam.description}</p>
+        {activeTeam ? (
+          <div className="flex flex-1 min-h-0">
+            <div className="flex-1 overflow-y-auto">
+              <div className="max-w-3xl mx-auto px-6 py-8 space-y-5">
+                <div>
+                  <h1 className="text-xl font-bold text-text-normal"># {activeTeam.name}</h1>
+                  {activeTeam.description && (
+                    <p className="text-sm text-text-muted mt-1 leading-relaxed">{activeTeam.description}</p>
+                  )}
+                </div>
+
+                {meetings.length > 0 ? (
+                  <div>
+                    {(() => {
+                      const now = new Date();
+                      const upcoming = meetings.filter((m) => new Date(m.scheduledAt) > now);
+                      const past = meetings.filter((m) => new Date(m.scheduledAt) <= now);
+                      return (
+                        <>
+                          {upcoming.length > 0 && (
+                            <div className="mb-6">
+                              <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+                                Upcoming
+                              </h3>
+                              <div className="space-y-2">
+                                {upcoming.map((m) => (
+                                  <div key={m.id} className="bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4">
+                                    <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
+                                      <span className="text-accent text-lg font-bold">
+                                        {new Date(m.scheduledAt).getDate()}
+                                      </span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-semibold text-text-normal">{m.title}</p>
+                                      {m.description && (
+                                        <p className="text-xs text-text-muted mt-0.5 leading-relaxed line-clamp-2">{m.description}</p>
+                                      )}
+                                      <p className="text-xs text-text-muted mt-0.5">
+                                        {new Date(m.scheduledAt).toLocaleDateString("en-US", {
+                                          weekday: "short", month: "short", day: "numeric",
+                                        })}
+                                        {" at "}
+                                        {new Date(m.scheduledAt).toLocaleTimeString("en-US", {
+                                          hour: "numeric", minute: "2-digit",
+                                        })}
+                                      </p>
+                                      {m.location && (
+                                        <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
+                                          {m.location}
+                                        </p>
+                                      )}
+                                      <p className="text-xs text-text-muted/60 mt-0.5">
+                                        by {m.creator?.name ?? "Unknown"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {past.length > 0 && (
+                            <div>
+                              <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+                                Past
+                              </h3>
+                              <div className="space-y-2">
+                                {past.map((m) => (
+                                  <div key={m.id} className="bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4 opacity-70">
+                                    <div className="w-12 h-12 rounded-xl bg-bg-secondary flex items-center justify-center shrink-0">
+                                      <span className="text-text-muted text-lg font-bold">
+                                        {new Date(m.scheduledAt).getDate()}
+                                      </span>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-semibold text-text-normal">{m.title}</p>
+                                      {m.description && (
+                                        <p className="text-xs text-text-muted mt-0.5 leading-relaxed line-clamp-2">{m.description}</p>
+                                      )}
+                                      <p className="text-xs text-text-muted mt-0.5">
+                                        {new Date(m.scheduledAt).toLocaleDateString("en-US", {
+                                          weekday: "short", month: "short", day: "numeric",
+                                        })}
+                                        {" at "}
+                                        {new Date(m.scheduledAt).toLocaleTimeString("en-US", {
+                                          hour: "numeric", minute: "2-digit",
+                                        })}
+                                      </p>
+                                      {m.location && (
+                                        <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
+                                          {m.location}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  <div className="bg-surface rounded-xl border border-border/50 p-8 text-center">
+                    <p className="text-sm text-text-muted">No meetings yet.</p>
+                  </div>
                 )}
-                <p className="text-xs text-text-muted mt-1">Team under {activeOrg?.name}</p>
-              </div>
 
-              <MembersSection
-                members={members}
-                teamId={activeTeam.id}
-                addEmail={addEmail}
-                onAddEmailChange={setAddEmail}
-                onAdd={addMember}
-                onRemove={removeMember}
-                error={memberError}
-              />
-
-              <div className="bg-surface rounded-xl border border-border/50 p-8 text-center">
-                <p className="text-sm text-text-muted">No meetings yet.</p>
                 <button
-                  disabled
-                  title="Coming soon"
-                  className="mt-4 px-5 py-2 text-sm font-medium bg-accent/40 text-white/40 rounded-lg cursor-not-allowed"
+                  onClick={() => { setError(""); setShowSchedule(true); }}
+                  className="px-5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-lg transition-all"
                 >
                   Schedule meeting
                 </button>
               </div>
             </div>
-          ) : (
-            <div className="max-w-3xl mx-auto px-6 py-8 space-y-5">
-              <div>
-                <h1 className="text-xl font-bold text-text-normal">{activeOrg?.name}</h1>
-                {activeOrg?.description && (
-                  <p className="text-sm text-text-muted mt-1 leading-relaxed">{activeOrg.description}</p>
+
+            <aside className="w-60 bg-bg-secondary border-l border-border/50 flex flex-col shrink-0">
+              <div className="h-12.25 flex items-center px-4 border-b border-border/50 shrink-0">
+                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+                  Members &mdash; {members.length}
+                </h3>
+              </div>
+              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+                {members.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-surface-hover/50 transition-colors">
+                    <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-accent text-xs font-semibold shrink-0">
+                      {m.user.name[0]}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-text-normal truncate">{m.user.name}</p>
+                      <p className="text-[11px] text-text-muted truncate">{m.user.email}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 border-t border-border/50">
+                {showAddMember ? (
+                  <>
+                    <input
+                      value={addEmail}
+                      onChange={(e) => setAddEmail(e.target.value)}
+                      placeholder="Email address"
+                      className="w-full px-3 py-2 text-sm mb-2"
+                      autoFocus
+                      onKeyDown={(e) => e.key === "Enter" && addMember()}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={addMember}
+                        disabled={!addEmail.trim()}
+                        className="flex-1 px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover disabled:bg-accent/50 text-white rounded-lg transition-all disabled:cursor-not-allowed"
+                      >
+                        Add
+                      </button>
+                      <button
+                        onClick={() => { setShowAddMember(false); setAddEmail(""); setMemberError(""); }}
+                        className="px-3 py-2 text-sm text-text-muted hover:text-text-normal transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {memberError && <p className="text-danger text-xs mt-2">{memberError}</p>}
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setShowAddMember(true)}
+                    className="w-full px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-lg transition-all"
+                  >
+                    Add member
+                  </button>
                 )}
-                <p className="text-xs text-text-muted mt-1">
-                  {teams.length} team{teams.length !== 1 ? "s" : ""}
+              </div>
+            </aside>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            {!user ? (
+              <div className="max-w-md mx-auto mt-[15vh] text-center px-4">
+                <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-5">
+                  <span className="text-accent text-xl font-bold">M</span>
+                </div>
+                <h1 className="text-2xl font-bold text-text-normal">Minutes</h1>
+                <p className="text-sm text-text-muted mt-2 leading-relaxed">
+                  Meeting minutes management for your organization.
                 </p>
               </div>
-
-              <MembersSection
-                members={members}
-                teamId={null}
-                addEmail={addEmail}
-                onAddEmailChange={setAddEmail}
-                onAdd={addMember}
-                onRemove={removeMember}
-                error={memberError}
-              />
-
-              <div className="bg-surface rounded-xl border border-border/50 p-5">
-                <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Teams</h3>
-                {teams.length > 0 ? (
-                  <div className="mt-3 space-y-0.5">
-                    {teams.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => setActiveTeamId(t.id)}
-                        className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-text-muted hover:bg-surface-hover/50 hover:text-text-normal transition-colors"
-                      >
-                        <span className="text-lg leading-none text-text-muted/60">#</span>
-                        {t.name}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-text-muted mt-2">No teams yet.</p>
-                )}
+            ) : !activeOrgId ? (
+              <div className="max-w-md mx-auto mt-[15vh] text-center px-4">
+                <h1 className="text-2xl font-bold text-text-normal">Welcome, {user.name}</h1>
+                <p className="text-sm text-text-muted mt-2 leading-relaxed">
+                  Create an organization to start managing meetings and minutes.
+                </p>
                 <button
-                  onClick={() => { setError(""); setShowNewTeam(true); }}
-                  className="mt-3 text-sm text-accent hover:text-accent-hover transition-colors"
+                  onClick={() => { setError(""); setShowNewOrg(true); }}
+                  className="mt-6 px-6 py-2.5 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-lg transition-all"
                 >
-                  + New team
+                  Create organization
                 </button>
               </div>
-            </div>
-          )}
-        </div>
+            ) : (
+              <div className="max-w-3xl mx-auto px-6 py-8 space-y-5">
+                <div>
+                  <h1 className="text-xl font-bold text-text-normal">{activeOrg?.name}</h1>
+                  {activeOrg?.description && (
+                    <p className="text-sm text-text-muted mt-1 leading-relaxed">{activeOrg.description}</p>
+                  )}
+                  <p className="text-xs text-text-muted mt-1">
+                    {teams.length} team{teams.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+
+                <MembersSection
+                  members={members}
+                  teamId={null}
+                  addEmail={addEmail}
+                  onAddEmailChange={setAddEmail}
+                  onAdd={addMember}
+                  onRemove={removeMember}
+                  error={memberError}
+                />
+
+                <div className="bg-surface rounded-xl border border-border/50 p-5">
+                  <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Teams</h3>
+                  {teams.length > 0 ? (
+                    <div className="mt-3 space-y-0.5">
+                      {teams.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => setActiveTeamId(t.id)}
+                          className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-text-muted hover:bg-surface-hover/50 hover:text-text-normal transition-colors"
+                        >
+                          <span className="text-lg leading-none text-text-muted/60">#</span>
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-text-muted mt-2">No teams yet.</p>
+                  )}
+                  <button
+                    onClick={() => { setError(""); setShowNewTeam(true); }}
+                    className="mt-3 text-sm text-accent hover:text-accent-hover transition-colors"
+                  >
+                    + New team
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {showNewOrg && (
@@ -604,6 +794,69 @@ export default function Home() {
           error={error}
           creating={creating}
         />
+      )}
+      {showSchedule && (
+        <ModalOverlay onClose={() => setShowSchedule(false)}>
+          <div className="bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
+            <h2 className="text-[17px] font-semibold text-text-normal mb-5">Schedule meeting</h2>
+            <input
+              value={meetingTitle}
+              onChange={(e) => setMeetingTitle(e.target.value)}
+              placeholder="Meeting title"
+              className="w-full px-3.5 py-2.5 text-sm mb-4"
+              autoFocus
+              disabled={scheduling}
+            />
+            <textarea
+              value={meetingDescription}
+              onChange={(e) => setMeetingDescription(e.target.value)}
+              placeholder="Description (optional)"
+              rows={2}
+              className="w-full px-3.5 py-2.5 text-sm mb-4 resize-none"
+              disabled={scheduling}
+            />
+            <div className="flex gap-3 mb-4">
+              <input
+                type="date"
+                value={meetingDate}
+                onChange={(e) => setMeetingDate(e.target.value)}
+                className="flex-1 px-3.5 py-2.5 text-sm"
+                disabled={scheduling}
+              />
+              <input
+                type="time"
+                value={meetingTime}
+                onChange={(e) => setMeetingTime(e.target.value)}
+                className="flex-1 px-3.5 py-2.5 text-sm"
+                disabled={scheduling}
+              />
+            </div>
+            <input
+              value={meetingLocation}
+              onChange={(e) => setMeetingLocation(e.target.value)}
+              placeholder="Location (optional)"
+              className="w-full px-3.5 py-2.5 text-sm mb-4"
+              disabled={scheduling}
+            />
+            {error && <p className="text-danger text-sm mb-4">{error}</p>}
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowSchedule(false)}
+                disabled={scheduling}
+                className="px-4 py-2 text-sm text-text-muted hover:text-text-normal transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={scheduleMeeting}
+                disabled={scheduling || !meetingTitle.trim() || !meetingDate || !meetingTime}
+                className="px-5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover disabled:bg-accent/50 text-white rounded-lg transition-all disabled:cursor-not-allowed"
+              >
+                {scheduling ? "Scheduling\u2026" : "Schedule"}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
       )}
     </div>
   );
