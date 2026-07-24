@@ -130,7 +130,7 @@ function MembersSection({
         <input
           value={addEmail}
           onChange={(e) => onAddEmailChange(e.target.value)}
-          placeholder="Add by email\u2026"
+          placeholder="Add by email"
           className="flex-1 px-3 py-2 text-sm"
           onKeyDown={(e) => e.key === "Enter" && onAdd()}
         />
@@ -312,11 +312,10 @@ export default function Home() {
             key={org.id}
             onClick={() => setActiveOrgId(org.id)}
             title={org.name}
-            className={`w-12 h-12 rounded-2xl transition-all duration-150 flex items-center justify-center font-bold text-lg ${
-              activeOrgId === org.id
+            className={`w-12 h-12 rounded-2xl transition-all duration-150 flex items-center justify-center font-bold text-lg ${activeOrgId === org.id
                 ? "bg-accent text-white rounded-xl"
                 : "bg-bg-secondary text-text-muted hover:bg-accent hover:text-white hover:rounded-xl"
-            }`}
+              }`}
           >
             {org.name[0].toUpperCase()}
           </button>
@@ -350,11 +349,10 @@ export default function Home() {
                 <button
                   key={t.id}
                   onClick={() => setActiveTeamId(t.id)}
-                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm transition-all duration-150 ${
-                    activeTeamId === t.id
+                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm transition-all duration-150 ${activeTeamId === t.id
                       ? "bg-surface text-text-normal"
                       : "text-text-muted hover:bg-surface/50 hover:text-text-normal"
-                  }`}
+                    }`}
                 >
                   <span className="text-lg leading-none text-text-muted/60 shrink-0">#</span>
                   <span className="truncate text-left">{t.name}</span>
