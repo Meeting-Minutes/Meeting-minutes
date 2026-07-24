@@ -41,11 +41,11 @@ CREATE TABLE "meetings" (
 );
 --> statement-breakpoint
 CREATE TABLE "memberships" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"team_id" uuid,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "memberships_user_id_organization_id_team_id_pk" PRIMARY KEY("user_id","organization_id","team_id")
+	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "minutes" (
@@ -67,7 +67,10 @@ CREATE TABLE "minutes_sections" (
 CREATE TABLE "organizations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL
+	"description" text,
+	"slug" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "organizations_slug_unique" UNIQUE("slug")
 );
 --> statement-breakpoint
 CREATE TABLE "permissions" (
@@ -101,6 +104,7 @@ CREATE TABLE "teams" (
 	"org_id" uuid NOT NULL,
 	"parent_team_id" uuid,
 	"name" text NOT NULL,
+	"description" text,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -127,6 +131,7 @@ CREATE TABLE "users" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"email" text NOT NULL,
 	"name" text NOT NULL,
+	"password_hash" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
@@ -159,4 +164,6 @@ ALTER TABLE "teams" ADD CONSTRAINT "teams_org_id_organizations_id_fk" FOREIGN KE
 ALTER TABLE "teams" ADD CONSTRAINT "teams_parent_team_fk" FOREIGN KEY ("parent_team_id") REFERENCES "public"."teams"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "template_sections" ADD CONSTRAINT "template_sections_template_id_templates_id_fk" FOREIGN KEY ("template_id") REFERENCES "public"."templates"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "templates" ADD CONSTRAINT "templates_orgId_organizations_id_fk" FOREIGN KEY ("orgId") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "templates" ADD CONSTRAINT "templates_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "templates" ADD CONSTRAINT "templates_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "unique_membership_org_wide" ON "memberships" USING btree ("user_id","organization_id") WHERE "memberships"."team_id" is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "unique_membership_per_team" ON "memberships" USING btree ("user_id","organization_id","team_id") WHERE "memberships"."team_id" is not null;

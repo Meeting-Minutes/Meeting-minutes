@@ -1,4 +1,5 @@
 import { seeds } from "./seeds";
+import { db } from "../index";
 
 async function main() {
   console.log("Seeding database...");
@@ -14,4 +15,4 @@ async function main() {
 main().catch((err) => {
   console.error(err);
   process.exit(1);
-});
+}).finally(() => db.$client.end());;
