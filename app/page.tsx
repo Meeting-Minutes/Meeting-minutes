@@ -36,7 +36,7 @@ function FormModal({
 
   return (
     <ModalOverlay onClose={onClose}>
-      <div className="bg-bg-primary rounded-xl p-6 w-[400px] shadow-2xl border border-border/50">
+      <div className="bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
         <h2 className="text-[17px] font-semibold text-text-normal mb-5">{title}</h2>
         {fields.map((f) =>
           f.multiline ? (
@@ -180,9 +180,12 @@ export default function Home() {
       });
   }, [user]);
 
+  // ponytail: no reset branch here for the falsy-org case — state already
+  // starts empty, and every place activeOrgId can become falsy-then-set
+  // (org switch, org create) resets activeTeamId itself. That keeps this
+  // effect's body to a single "update from external system" call, which is
+  // what React's setState-in-effect check wants.
   useEffect(() => {
-    setActiveTeamId(null);
-    setMembers([]);
     if (!activeOrgId) return;
     fetch(`/api/organizations/${activeOrgId}/teams`)
       .then((r) => (r.ok ? r.json() : []))
@@ -197,10 +200,23 @@ export default function Home() {
     if (res.ok) setMembers(await res.json());
   }, []);
 
+  // ponytail: inlined (not calling fetchMembers) so the effect lint rule can
+  // trace the .then() chain directly — same reason the teams effect above
+  // inlines its fetch instead of calling out to a named async function.
   useEffect(() => {
     if (!activeOrgId) return;
-    fetchMembers(activeOrgId, activeTeamId ?? undefined);
-  }, [activeOrgId, activeTeamId, fetchMembers]);
+    const url = activeTeamId
+      ? `/api/organizations/${activeOrgId}/members?teamId=${activeTeamId}`
+      : `/api/organizations/${activeOrgId}/members`;
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setMembers);
+  }, [activeOrgId, activeTeamId]);
+
+  function selectOrg(orgId: string) {
+    setActiveOrgId(orgId);
+    setActiveTeamId(null);
+  }
 
   async function createOrg(values: Record<string, string>) {
     setError(""); setCreating(true);
@@ -216,6 +232,7 @@ export default function Home() {
     const org = await res.json();
     setOrgs((prev) => [...prev, org]);
     setActiveOrgId(org.id);
+    setActiveTeamId(null);
     setShowNewOrg(false);
   }
 
@@ -306,15 +323,15 @@ export default function Home() {
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Server bar */}
-      <nav className="w-[72px] bg-bg-tertiary flex flex-col items-center gap-1.5 py-3 shrink-0">
+      <nav className="w-18 bg-bg-tertiary flex flex-col items-center gap-1.5 py-3 shrink-0">
         {orgs.map((org) => (
           <button
             key={org.id}
-            onClick={() => setActiveOrgId(org.id)}
+            onClick={() => selectOrg(org.id)}
             title={org.name}
             className={`w-12 h-12 rounded-2xl transition-all duration-150 flex items-center justify-center font-bold text-lg ${activeOrgId === org.id
-                ? "bg-accent text-white rounded-xl"
-                : "bg-bg-secondary text-text-muted hover:bg-accent hover:text-white hover:rounded-xl"
+              ? "bg-accent text-white rounded-xl"
+              : "bg-bg-secondary text-text-muted hover:bg-accent hover:text-white hover:rounded-xl"
               }`}
           >
             {org.name[0].toUpperCase()}
@@ -332,7 +349,7 @@ export default function Home() {
 
       {/* Channel sidebar */}
       <aside className="w-60 bg-bg-secondary flex flex-col shrink-0">
-        <div className="h-[49px] flex items-center px-4 border-b border-border/50 shrink-0">
+        <div className="h-12.25 flex items-center px-4 border-b border-border/50 shrink-0">
           <h2 className="text-[15px] font-semibold text-text-normal truncate">
             {activeOrg?.name || "Minutes"}
           </h2>
@@ -350,8 +367,8 @@ export default function Home() {
                   key={t.id}
                   onClick={() => setActiveTeamId(t.id)}
                   className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm transition-all duration-150 ${activeTeamId === t.id
-                      ? "bg-surface text-text-normal"
-                      : "text-text-muted hover:bg-surface/50 hover:text-text-normal"
+                    ? "bg-surface text-text-normal"
+                    : "text-text-muted hover:bg-surface/50 hover:text-text-normal"
                     }`}
                 >
                   <span className="text-lg leading-none text-text-muted/60 shrink-0">#</span>
@@ -374,7 +391,7 @@ export default function Home() {
           )}
         </div>
         {user && (
-          <div className="h-[53px] shrink-0 bg-bg-tertiary/30 px-3 flex items-center gap-2.5 border-t border-border/50">
+          <div className="h-13.25 shrink-0 bg-bg-tertiary/30 px-3 flex items-center gap-2.5 border-t border-border/50">
             <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent text-sm font-semibold shrink-0">
               {user.name[0]}
             </div>
@@ -396,7 +413,7 @@ export default function Home() {
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <div className="frost h-[49px] border-b border-border/50 flex items-center px-5 shrink-0 sticky top-0 z-10">
+        <div className="frost h-12.25 border-b border-border/50 flex items-center px-5 shrink-0 sticky top-0 z-10">
           {activeTeam ? (
             <>
               <span className="text-text-muted mr-1.5 text-lg font-semibold">#</span>
