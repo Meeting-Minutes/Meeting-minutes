@@ -23,12 +23,12 @@ export async function seedDemo() {
     id: orgId,
     name: "Acme Corp",
     slug: "acme-corp",
-  });
+  }).onConflictDoNothing();
 
   await db.insert(memberships).values({
     userId: user.id,
     organizationId: orgId,
-  });
+  }).onConflictDoNothing();
 
   const teamNames = ["Engineering", "Design", "Marketing", "Operations"];
   for (const name of teamNames) {
@@ -36,7 +36,7 @@ export async function seedDemo() {
       id: randomUUID(),
       orgId,
       name,
-    });
+    }).onConflictDoNothing();
   }
 
   console.log(`Seeded demo org "Acme Corp" with ${teamNames.length} teams`);
