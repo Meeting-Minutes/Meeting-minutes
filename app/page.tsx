@@ -7,7 +7,7 @@ type Org = { id: string; name: string; description?: string | null; slug: string
 type Team = { id: string; name: string; description?: string | null };
 type User = { id: string; email: string; name: string };
 type Member = { id: string; userId: string; teamId: string | null; createdAt: string; user: User };
-type Meeting = { id: string; title: string; description: string | null; scheduledAt: string; location: string | null; createdAt: string; creator: { id: string; name: string } | null };
+type Meeting = { id: string; title: string; description: string | null; scheduledAt: string; location: string | null };
 
 function ModalOverlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
@@ -144,6 +144,37 @@ function MembersSection({
         </button>
       </div>
       {error && <p className="text-danger text-xs mt-2">{error}</p>}
+    </div>
+  );
+}
+
+function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolean }) {
+  return (
+    <div className={`bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4 ${!upcoming ? "opacity-70" : ""}`}>
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${upcoming ? "bg-accent/10" : "bg-bg-secondary"}`}>
+        <span className={`text-lg font-bold ${upcoming ? "text-accent" : "text-text-muted"}`}>
+          {new Date(meeting.scheduledAt).getDate()}
+        </span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-text-normal">{meeting.title}</p>
+        {meeting.description && (
+          <p className="text-xs text-text-muted mt-0.5 leading-relaxed line-clamp-2">{meeting.description}</p>
+        )}
+        <p className="text-xs text-text-muted mt-0.5">
+          {new Date(meeting.scheduledAt).toLocaleDateString("en-US", {
+            weekday: "short", month: "short", day: "numeric",
+          })}
+          {" at "}
+          {new Date(meeting.scheduledAt).toLocaleTimeString("en-US", {
+            hour: "numeric", minute: "2-digit",
+          })}
+        </p>
+        {meeting.location && (
+          <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">{meeting.location}</p>
+        )}
+
+      </div>
     </div>
   );
 }
@@ -497,102 +528,34 @@ export default function Home() {
                   )}
                 </div>
 
-                {meetings.length > 0 ? (
-                  <div>
-                    {(() => {
-                      const now = new Date();
-                      const upcoming = meetings.filter((m) => new Date(m.scheduledAt) > now);
-                      const past = meetings.filter((m) => new Date(m.scheduledAt) <= now);
-                      return (
-                        <>
-                          {upcoming.length > 0 && (
-                            <div className="mb-6">
-                              <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-                                Upcoming
-                              </h3>
-                              <div className="space-y-2">
-                                {upcoming.map((m) => (
-                                  <div key={m.id} className="bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center shrink-0">
-                                      <span className="text-accent text-lg font-bold">
-                                        {new Date(m.scheduledAt).getDate()}
-                                      </span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-semibold text-text-normal">{m.title}</p>
-                                      {m.description && (
-                                        <p className="text-xs text-text-muted mt-0.5 leading-relaxed line-clamp-2">{m.description}</p>
-                                      )}
-                                      <p className="text-xs text-text-muted mt-0.5">
-                                        {new Date(m.scheduledAt).toLocaleDateString("en-US", {
-                                          weekday: "short", month: "short", day: "numeric",
-                                        })}
-                                        {" at "}
-                                        {new Date(m.scheduledAt).toLocaleTimeString("en-US", {
-                                          hour: "numeric", minute: "2-digit",
-                                        })}
-                                      </p>
-                                      {m.location && (
-                                        <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
-                                          {m.location}
-                                        </p>
-                                      )}
-                                      <p className="text-xs text-text-muted/60 mt-0.5">
-                                        by {m.creator?.name ?? "Unknown"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {past.length > 0 && (
-                            <div>
-                              <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-                                Past
-                              </h3>
-                              <div className="space-y-2">
-                                {past.map((m) => (
-                                  <div key={m.id} className="bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4 opacity-70">
-                                    <div className="w-12 h-12 rounded-xl bg-bg-secondary flex items-center justify-center shrink-0">
-                                      <span className="text-text-muted text-lg font-bold">
-                                        {new Date(m.scheduledAt).getDate()}
-                                      </span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <p className="text-sm font-semibold text-text-normal">{m.title}</p>
-                                      {m.description && (
-                                        <p className="text-xs text-text-muted mt-0.5 leading-relaxed line-clamp-2">{m.description}</p>
-                                      )}
-                                      <p className="text-xs text-text-muted mt-0.5">
-                                        {new Date(m.scheduledAt).toLocaleDateString("en-US", {
-                                          weekday: "short", month: "short", day: "numeric",
-                                        })}
-                                        {" at "}
-                                        {new Date(m.scheduledAt).toLocaleTimeString("en-US", {
-                                          hour: "numeric", minute: "2-digit",
-                                        })}
-                                      </p>
-                                      {m.location && (
-                                        <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">
-                                          {m.location}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                ) : (
-                  <div className="bg-surface rounded-xl border border-border/50 p-8 text-center">
-                    <p className="text-sm text-text-muted">No meetings yet.</p>
-                  </div>
-                )}
+                {(() => {
+                  const now = new Date();
+                  const upcoming = meetings.filter((m) => new Date(m.scheduledAt) > now);
+                  const past = meetings.filter((m) => new Date(m.scheduledAt) <= now);
+                  if (upcoming.length === 0 && past.length === 0) {
+                    return (
+                      <div className="bg-surface rounded-xl border border-border/50 p-8 text-center">
+                        <p className="text-sm text-text-muted">No meetings yet.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div>
+                      {upcoming.length > 0 && (
+                        <div className="mb-6">
+                          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Upcoming</h3>
+                          <div className="space-y-2">{upcoming.map((m) => <MeetingCard key={m.id} meeting={m} upcoming />)}</div>
+                        </div>
+                      )}
+                      {past.length > 0 && (
+                        <div>
+                          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Past</h3>
+                          <div className="space-y-2">{past.map((m) => <MeetingCard key={m.id} meeting={m} upcoming={false} />)}</div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 <button
                   onClick={() => { setError(""); setShowSchedule(true); }}
