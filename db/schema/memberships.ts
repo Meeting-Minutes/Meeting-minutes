@@ -16,7 +16,7 @@ export const memberships = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     teamId: uuid("team_id")
-      .references(() => teams.id, { onDelete: "cascade" }),
+      .references(() => teams.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
