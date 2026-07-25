@@ -222,6 +222,7 @@ bun run lib/permissions.check.ts
 | `db/schema/memberships.ts`        | Added `roleId` FK to `roles`                        |
 | `db/schema/meeting_overrides.ts`  | New table for per-meeting role overrides            |
 | `db/schema/index.ts`              | Added `export * from "./meeting_overrides"`         |
-| `db/migrations/0002_*.sql`        | Generated migration                                  |
+| `db/migrations/0002_fix_meetings.sql` | Meetings column rename (`sheduled_at` → `scheduled_at`) + add `location`/`description` |
+| `db/migrations/0003_*.sql`        | RBAC migration (meeting_overrides, role_id)           |
 | `app/api/organizations/route.ts`  | Bootstrap fix: create Admin role on org creation    |
 | `DESIGN.md` §3–§5                 | Spec: membership model, roles, meeting overrides    |
