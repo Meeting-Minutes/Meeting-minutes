@@ -1,6 +1,6 @@
 {
-  "id": "b8f9a688-7822-4a22-b008-c7dde1bb787d",
-  "prevId": "9c61a2e4-13d6-46e8-9e60-5f395f149539",
+  "id": "ee685ed2-0959-48bb-a9e7-c7549bded47b",
+  "prevId": "b8f9a688-7822-4a22-b008-c7dde1bb787d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -164,6 +164,85 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.meeting_overrides": {
+      "name": "meeting_overrides",
+      "schema": "",
+      "columns": {
+        "meeting_id": {
+          "name": "meeting_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "meeting_overrides_meeting_id_meetings_id_fk": {
+          "name": "meeting_overrides_meeting_id_meetings_id_fk",
+          "tableFrom": "meeting_overrides",
+          "tableTo": "meetings",
+          "columnsFrom": [
+            "meeting_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "meeting_overrides_user_id_users_id_fk": {
+          "name": "meeting_overrides_user_id_users_id_fk",
+          "tableFrom": "meeting_overrides",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "meeting_overrides_role_id_roles_id_fk": {
+          "name": "meeting_overrides_role_id_roles_id_fk",
+          "tableFrom": "meeting_overrides",
+          "tableTo": "roles",
+          "columnsFrom": [
+            "role_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "meeting_overrides_meeting_id_user_id_pk": {
+          "name": "meeting_overrides_meeting_id_user_id_pk",
+          "columns": [
+            "meeting_id",
+            "user_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -333,6 +412,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "scheduled_at": {
+          "name": "scheduled_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
         "created_by": {
           "name": "created_by",
           "type": "uuid",
@@ -345,12 +430,6 @@
           "primaryKey": false,
           "notNull": false,
           "default": "now()"
-        },
-        "scheduled_at": {
-          "name": "scheduled_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
         }
       },
       "indexes": {},
@@ -439,6 +518,12 @@
         },
         "team_id": {
           "name": "team_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role_id": {
+          "name": "role_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -536,6 +621,19 @@
           "tableTo": "teams",
           "columnsFrom": [
             "team_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "memberships_role_id_roles_id_fk": {
+          "name": "memberships_role_id_roles_id_fk",
+          "tableFrom": "memberships",
+          "tableTo": "roles",
+          "columnsFrom": [
+            "role_id"
           ],
           "columnsTo": [
             "id"

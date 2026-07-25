@@ -4,6 +4,7 @@ import { isNull, isNotNull } from "drizzle-orm/sql/expressions/conditions";
 import { organizations } from "./organizations";
 import { users } from "./users";
 import { teams } from "./teams";
+import { roles } from "./roles";
 
 export const memberships = pgTable(
   "memberships",
@@ -17,6 +18,8 @@ export const memberships = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     teamId: uuid("team_id")
       .references(() => teams.id, { onDelete: "set null" }),
+    roleId: uuid("role_id")
+      .references(() => roles.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
