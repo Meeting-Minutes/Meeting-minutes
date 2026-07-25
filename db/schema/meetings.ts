@@ -20,8 +20,10 @@ export const meetings = pgTable(
       onDelete: "set null",
     }),
     title: text("title").notNull(),
+    description: text("description"),
+    location: text("location"),
     continuationOf: uuid("continuation_of"),
-    sheduledAt: timestamp("sheduled_at").notNull(),
+    scheduledAt: timestamp("scheduled_at").notNull(),
     createdBy: uuid("created_by").references(() => users.id, {
       onDelete: "set null",
     }),

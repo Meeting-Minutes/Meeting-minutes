@@ -15,7 +15,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rows = await db
-    .select({
+    .selectDistinct({
       id: organizations.id,
       name: organizations.name,
       description: organizations.description,
