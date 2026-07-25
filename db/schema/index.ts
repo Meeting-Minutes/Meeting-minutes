@@ -1,6 +1,7 @@
 export * from "./attendance";
 export * from "./cluster_meetings";
 export * from "./clusters";
+export * from "./meeting_overrides";
 export * from "./meeting_tags";
 export * from "./meeting_teams";
 export * from "./meetings";
