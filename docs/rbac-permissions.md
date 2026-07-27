@@ -213,7 +213,72 @@ bun run lib/permissions.check.ts
 
 ---
 
-## 9. File map
+## 9. Role management API
+
+Six endpoints to manage roles and permissions for an org. Follows the same
+patterns as the existing teams/members routes.
+
+### `GET /api/organizations/[orgId]/roles`
+
+List all roles for the org.
+
+### `POST /api/organizations/[orgId]/roles`
+
+```json
+{ "name": "Secretary" }
+```
+
+Creates a new role with zero permissions attached. Returns the role.
+
+### `PATCH /api/organizations/[orgId]/roles`
+
+```json
+{ "roleId": "...", "name": "Co-chair" }
+```
+
+Rename a role. The role must belong to the org.
+
+### `DELETE /api/organizations/[orgId]/roles?roleId=...`
+
+Delete a role. The FK on `memberships.roleId` is `SET NULL`, so existing
+memberships keep their row but lose their role assignment.
+
+### `GET /api/permissions`
+
+List the global permission catalog (12 fixed keys, seeded). Read-only.
+
+### `GET /api/organizations/[orgId]/roles/[roleId]/permissions`
+
+List the permissions currently attached to a role.
+
+### `POST /api/organizations/[orgId]/roles/[roleId]/permissions`
+
+```json
+{ "permissionId": "..." }
+```
+
+Attach a permission to the role. Idempotent (`onConflictDoNothing`).
+
+### `DELETE /api/organizations/[orgId]/roles/[roleId]/permissions`
+
+```json
+{ "permissionId": "..." }
+```
+
+Detach a permission from the role.
+
+### Member role assignment
+
+`POST /api/organizations/[orgId]/members` now accepts optional `roleId`.
+`PATCH /api/organizations/[orgId]/members` updates `roleId` on a membership:
+
+```json
+{ "userId": "...", "roleId": "..." }
+```
+
+---
+
+## 10. File map
 
 | File                              | Role                                                |
 | --------------------------------- | --------------------------------------------------- |
@@ -225,4 +290,15 @@ bun run lib/permissions.check.ts
 | `db/migrations/0002_fix_meetings.sql` | Meetings column rename (`sheduled_at` → `scheduled_at`) + add `location`/`description` |
 | `db/migrations/0003_*.sql`        | RBAC migration (meeting_overrides, role_id)           |
 | `app/api/organizations/route.ts`  | Bootstrap fix: create Admin role on org creation    |
+| `app/api/organizations/[orgId]/roles/route.ts` | Role CRUD (list, create, rename, delete) |
+| `app/api/organizations/[orgId]/roles/[roleId]/permissions/route.ts` | Attach/detach permissions |
+| `app/api/permissions/route.ts`    | Global permission catalog listing                   |
+| `app/api/organizations/[orgId]/members/route.ts` | Extended with `roleId` on POST/PATCH       |
 | `DESIGN.md` §3–§5                 | Spec: membership model, roles, meeting overrides    |
+
+---
+
+> **Ref #6** — Organization-level roles: roles are per-org, names are
+> configurable, permissions are assigned via `role_permissions`. The schema
+> supports splitting a broad role into narrower ones without restructuring
+> (create a new role row, reassign memberships).
