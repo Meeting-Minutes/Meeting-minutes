@@ -50,14 +50,23 @@
 - Full-height member sidebar in team view
 - Custom thin dark scrollbar, `antialiased` text
 
-## Not done (blocked or not started)
+### 7. Meetings search
+- `?q=` query param on `GET /api/teams/[teamId]/meetings`
+- ILIKE search on `title`, `description`, `location`
+- Search bar in team view: flat results when query active, upcoming/past split when empty
+- Server-side search, instant on every keystroke
 
-### Permissions & roles
-- `lib/permissions.ts` exists but is empty
-- `roles`, `permissions`, `role_permissions` tables exist in schema
-- No `role_id` on `memberships` — cannot assign roles to members
-- Seed file for fixed permission catalog exists (`db/seed/permissions.ts`) but roles not seeded
-- App-wide: any authenticated user can do anything
+### 8. Permissions & roles (shipped by friends)
+- `lib/permissions.ts`: `getPermissionKeys()`, `hasPermission()` with self-check tests (`lib/permissions.check.ts`)
+- `meeting_overrides` table for per-meeting role overrides
+- `role_id` column on `memberships`
+- 12 seeded permission keys in `db/seed/permissions.ts`
+- Seed creates default Admin role per org with all permissions
+- `db/seed/demo.ts` creates org-wide + team-specific memberships with roles
+- `lib/rich-text.ts`: ProseMirror JSON document model, validator, safe HTML renderer (196 assertions)
+- `lib/render-document.ts`: Canonical Render Document envelope assembler (6 section types tested)
+
+## Not done (blocked or not started)
 
 ### Templates
 - `templates` and `template_sections` tables exist in schema

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { meetings, meetingTeams, teams, users } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { meetings, meetingTeams, teams } from "@/db/schema";
+import { eq, desc, and, or, ilike, gte, lte } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function GET(
@@ -12,6 +12,26 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { teamId } = await params;
+  const url = new URL(_req.url);
+  const q = url.searchParams.get("q")?.trim();
+  const from = url.searchParams.get("from")?.trim();
+  const to = url.searchParams.get("to")?.trim();
+
+  const conditions = [eq(meetingTeams.teamId, teamId)];
+
+  if (q) {
+    const pattern = `%${q}%`;
+    conditions.push(
+      or(
+        ilike(meetings.title, pattern),
+        ilike(meetings.description, pattern),
+        ilike(meetings.location, pattern),
+      )!,
+    );
+  }
+
+  if (from) conditions.push(gte(meetings.scheduledAt, new Date(from)));
+  if (to) conditions.push(lte(meetings.scheduledAt, new Date(to)));
 
   const rows = await db
     .select({
@@ -21,12 +41,10 @@ export async function GET(
       scheduledAt: meetings.scheduledAt,
       location: meetings.location,
       createdAt: meetings.createdAt,
-      creator: { id: users.id, name: users.name },
     })
     .from(meetings)
     .innerJoin(meetingTeams, eq(meetingTeams.meetingId, meetings.id))
-    .leftJoin(users, eq(meetings.createdBy, users.id))
-    .where(eq(meetingTeams.teamId, teamId))
+    .where(and(...conditions))
     .orderBy(desc(meetings.scheduledAt));
 
   return NextResponse.json(rows);
@@ -78,10 +96,8 @@ export async function POST(
       scheduledAt: meetings.scheduledAt,
       location: meetings.location,
       createdAt: meetings.createdAt,
-      creator: { id: users.id, name: users.name },
     })
     .from(meetings)
-    .leftJoin(users, eq(meetings.createdBy, users.id))
     .where(eq(meetings.id, meetingId))
     .limit(1);
 

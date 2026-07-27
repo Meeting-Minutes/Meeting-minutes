@@ -52,7 +52,7 @@ async function main() {
     { userId: userId2, organizationId: orgId, teamId: teamId1, roleId },
   ]);
 
-  await db.insert(meetings).values({ id: meetingId, orgId, title: "PermCheck Meeting", sheduledAt: new Date() });
+  await db.insert(meetings).values({ id: meetingId, orgId, title: "PermCheck Meeting", scheduledAt: new Date() });
   await db.insert(meetingOverrides).values({ meetingId, userId: userId3, roleId });
 
   // --- Test 1: org-wide role ---
