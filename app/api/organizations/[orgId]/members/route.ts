@@ -55,7 +55,7 @@ export async function POST(
   if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
-  const { email, teamId } = await req.json();
+  const { email, teamId, roleId } = await req.json();
 
   if (!email || typeof email !== "string") {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
@@ -77,6 +77,7 @@ export async function POST(
       userId: targetUser.id,
       organizationId: orgId,
       teamId: teamId || null,
+      roleId: roleId || null,
     })
     .onConflictDoNothing()
     .returning();
@@ -89,6 +90,40 @@ export async function POST(
   }
 
   return NextResponse.json(membership, { status: 201 });
+}
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ orgId: string }> },
+) {
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { orgId } = await params;
+  const { userId, teamId, roleId } = await req.json();
+
+  if (!userId) {
+    return NextResponse.json({ error: "userId is required" }, { status: 400 });
+  }
+
+  const conditions = [
+    eq(memberships.userId, userId),
+    eq(memberships.organizationId, orgId),
+  ];
+  if (teamId) {
+    conditions.push(eq(memberships.teamId, teamId));
+  } else {
+    conditions.push(isNull(memberships.teamId));
+  }
+
+  const [membership] = await db
+    .update(memberships)
+    .set({ roleId: roleId || null })
+    .where(and(...conditions))
+    .returning();
+
+  if (!membership) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(membership);
 }
 
 export async function DELETE(
