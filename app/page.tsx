@@ -198,6 +198,10 @@ export default function Home() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showDateFilter, setShowDateFilter] = useState(false);
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
   const [meetingTitle, setMeetingTitle] = useState("");
   const [meetingDate, setMeetingDate] = useState("");
   const [meetingTime, setMeetingTime] = useState("");
@@ -256,10 +260,14 @@ export default function Home() {
 
   useEffect(() => {
     if (!activeTeamId) { setMeetings([]); return; }
-    fetch(`/api/teams/${activeTeamId}/meetings`)
+    const params = new URLSearchParams();
+    if (searchQuery.trim()) params.set("q", searchQuery.trim());
+    if (filterFrom) params.set("from", filterFrom);
+    if (filterTo) params.set("to", filterTo);
+    fetch(`/api/teams/${activeTeamId}/meetings?${params}`)
       .then((r) => (r.ok ? r.json() : []))
       .then(setMeetings);
-  }, [activeTeamId]);
+  }, [activeTeamId, searchQuery, filterFrom, filterTo]);
 
   function selectOrg(orgId: string) {
     setActiveOrgId(orgId);
@@ -528,17 +536,117 @@ export default function Home() {
                   )}
                 </div>
 
+                <div className="space-y-2.5">
+                  {/* Search */}
+                  <div className="relative group">
+                    <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-accent/5 via-accent/10 to-accent/5 opacity-0 group-focus-within:opacity-100 transition-opacity duration-500" />
+                    <div className="relative flex items-center bg-bg-secondary/80 backdrop-blur-sm border border-border/60 rounded-xl overflow-hidden transition-all duration-300 shadow-sm group-focus-within:border-accent/50 group-focus-within:shadow-[0_0_20px_-4px_rgba(88,101,242,0.25)] group-focus-within:bg-bg-secondary">
+                      <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-text-muted group-focus-within:text-accent transition-colors duration-300 pointer-events-none" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <circle cx="9" cy="9" r="5.5" />
+                        <line x1="13.5" y1="13.5" x2="18" y2="18" />
+                      </svg>
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search meetings..."
+                        className="w-full bg-transparent border-none pl-[44px] pr-10 py-3 text-sm placeholder:text-text-muted/50 focus:outline-none focus:ring-0 rounded-xl shadow-none"
+                      />
+                      {searchQuery.trim() && (
+                        <button
+                          onClick={() => setSearchQuery("")}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-surface hover:bg-surface-hover flex items-center justify-center text-text-muted hover:text-text-normal transition-all duration-200 text-xs"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Date filter toggle + inputs */}
+                  <div>
+                    {showDateFilter ? (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex-1 relative group">
+                          <div className="flex items-center bg-bg-secondary/60 backdrop-blur-sm border border-border/50 rounded-lg overflow-hidden transition-all duration-200 group-focus-within:border-accent/40 group-focus-within:shadow-[0_0_14px_-4px_rgba(88,101,242,0.15)]">
+                            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                              <rect x="1.5" y="3" width="13" height="11.5" rx="1.5" />
+                              <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" />
+                              <line x1="5" y1="1" x2="5" y2="4.5" />
+                              <line x1="11" y1="1" x2="11" y2="4.5" />
+                            </svg>
+                            <input
+                              type="date"
+                              value={filterFrom}
+                              onChange={(e) => setFilterFrom(e.target.value)}
+                              className="w-full bg-transparent border-none pl-[34px] pr-2 py-2 text-xs text-text-normal focus:outline-none focus:ring-0 rounded-lg shadow-none [color-scheme:dark]"
+                            />
+                          </div>
+                        </div>
+                        <span className="text-text-muted text-xs shrink-0">to</span>
+                        <div className="flex-1 relative group">
+                          <div className="flex items-center bg-bg-secondary/60 backdrop-blur-sm border border-border/50 rounded-lg overflow-hidden transition-all duration-200 group-focus-within:border-accent/40 group-focus-within:shadow-[0_0_14px_-4px_rgba(88,101,242,0.15)]">
+                            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                              <rect x="1.5" y="3" width="13" height="11.5" rx="1.5" />
+                              <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" />
+                              <line x1="5" y1="1" x2="5" y2="4.5" />
+                              <line x1="11" y1="1" x2="11" y2="4.5" />
+                            </svg>
+                            <input
+                              type="date"
+                              value={filterTo}
+                              onChange={(e) => setFilterTo(e.target.value)}
+                              className="w-full bg-transparent border-none pl-[34px] pr-2 py-2 text-xs text-text-normal focus:outline-none focus:ring-0 rounded-lg shadow-none [color-scheme:dark]"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => { setShowDateFilter(false); setFilterFrom(""); setFilterTo(""); }}
+                          className="shrink-0 px-2.5 py-2 text-xs text-text-muted hover:text-text-normal hover:bg-surface/50 rounded-lg transition-all"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowDateFilter(true)}
+                        className="flex items-center gap-2 px-3 py-2 text-xs text-text-muted hover:text-text-normal hover:bg-surface/40 rounded-lg transition-all"
+                      >
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                          <rect x="1.5" y="3" width="13" height="11.5" rx="1.5" />
+                          <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" />
+                          <line x1="5" y1="1" x2="5" y2="4.5" />
+                          <line x1="11" y1="1" x2="11" y2="4.5" />
+                        </svg>
+                        Filter by date
+                      </button>
+                    )}
+                  </div>
+                </div>
+
                 {(() => {
-                  const now = new Date();
-                  const upcoming = meetings.filter((m) => new Date(m.scheduledAt) > now);
-                  const past = meetings.filter((m) => new Date(m.scheduledAt) <= now);
-                  if (upcoming.length === 0 && past.length === 0) {
+                  if (meetings.length === 0) {
                     return (
                       <div className="bg-surface rounded-xl border border-border/50 p-8 text-center">
-                        <p className="text-sm text-text-muted">No meetings yet.</p>
+                        <p className="text-sm text-text-muted">
+                          {searchQuery.trim() ? "No meetings match your search." : "No meetings yet."}
+                        </p>
                       </div>
                     );
                   }
+                  if (searchQuery.trim()) {
+                    return (
+                      <div>
+                        <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+                          {meetings.length} result{meetings.length !== 1 ? "s" : ""}
+                        </h3>
+                        <div className="space-y-2">{meetings.map((m) => <MeetingCard key={m.id} meeting={m} upcoming={new Date(m.scheduledAt) > new Date()} />)}</div>
+                      </div>
+                    );
+                  }
+                  const now = new Date();
+                  const upcoming = meetings.filter((m) => new Date(m.scheduledAt) > now);
+                  const past = meetings.filter((m) => new Date(m.scheduledAt) <= now);
                   return (
                     <div>
                       {upcoming.length > 0 && (
