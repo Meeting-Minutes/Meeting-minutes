@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { teams } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { teams, memberships } from "@/db/schema";
+import { eq, and, isNull } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
 
@@ -36,16 +36,33 @@ export async function POST(
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
+  const teamId = randomUUID();
+
   const [team] = await db
     .insert(teams)
     .values({
-      id: randomUUID(),
+      id: teamId,
       orgId,
       name,
       description: description || null,
       parentTeamId: parentTeamId || null,
     })
     .returning();
+
+  // Auto-add creator as team-specific member if not already an org-wide member
+  const [existing] = await db
+    .select()
+    .from(memberships)
+    .where(and(eq(memberships.userId, user.id), eq(memberships.organizationId, orgId), isNull(memberships.teamId)))
+    .limit(1);
+
+  if (existing) {
+    await db.insert(memberships).values({
+      userId: user.id,
+      organizationId: orgId,
+      teamId,
+    }).onConflictDoNothing();
+  }
 
   return NextResponse.json(team, { status: 201 });
 }

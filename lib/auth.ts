@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { compare } from "bcryptjs";
+import { compare, hash } from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -41,4 +41,18 @@ export async function requireAuth() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   return user;
+}
+
+export async function createUser(name: string, email: string, password: string) {
+  const hashedPassword = await hash(password, 10);
+  const existingUser = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+  if (existingUser.length > 0) throw new Error("User already exists");
+
+  const id = crypto.randomUUID();
+  await db.insert(users).values({ id, name, email, passwordHash: hashedPassword });
+  return { id, name, email };
 }

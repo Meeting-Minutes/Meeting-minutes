@@ -23,20 +23,26 @@ export async function seedDemo() {
     id: orgId,
     name: "Acme Corp",
     slug: "acme-corp",
-  });
+  }).onConflictDoNothing();
 
   await db.insert(memberships).values({
     userId: user.id,
     organizationId: orgId,
-  });
+  }).onConflictDoNothing();
 
   const teamNames = ["Engineering", "Design", "Marketing", "Operations"];
   for (const name of teamNames) {
+    const teamId = randomUUID();
     await db.insert(teams).values({
-      id: randomUUID(),
+      id: teamId,
       orgId,
       name,
-    });
+    }).onConflictDoNothing();
+    await db.insert(memberships).values({
+      userId: user.id,
+      organizationId: orgId,
+      teamId,
+    }).onConflictDoNothing();
   }
 
   console.log(`Seeded demo org "Acme Corp" with ${teamNames.length} teams`);

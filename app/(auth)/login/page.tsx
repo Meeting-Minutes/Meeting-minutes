@@ -65,6 +65,9 @@ export default function LoginPage() {
             {pending ? "Signing in..." : "Sign In"}
           </button>
         </form>
+        <p className="text-text-muted text-sm mt-4">
+          Don&apos;t have an account? <a href="/signup" className="text-accent">Sign up here</a>
+        </p>
       </div>
     </div>
   );

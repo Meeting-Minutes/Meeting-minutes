@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { organizations, memberships } from "@/db/schema";
+import {
+  organizations,
+  memberships,
+  roles,
+  permissions as permissionsTable,
+  rolePermissions,
+} from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -9,7 +15,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const rows = await db
-    .select({
+    .selectDistinct({
       id: organizations.id,
       name: organizations.name,
       description: organizations.description,
@@ -39,9 +45,25 @@ export async function POST(req: Request) {
     .values({ name, description: description || null, slug })
     .returning();
 
+  const [adminRole] = await db
+    .insert(roles)
+    .values({ id: crypto.randomUUID(), name: "Admin", orgId: org.id })
+    .returning();
+
+  const allPerms = await db
+    .select({ id: permissionsTable.id })
+    .from(permissionsTable);
+
+  if (allPerms.length > 0) {
+    await db.insert(rolePermissions).values(
+      allPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
+    );
+  }
+
   await db.insert(memberships).values({
     userId: user.id,
     organizationId: org.id,
+    roleId: adminRole.id,
   });
 
   return NextResponse.json(org, { status: 201 });

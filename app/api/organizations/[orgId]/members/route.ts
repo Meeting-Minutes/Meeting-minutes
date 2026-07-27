@@ -15,13 +15,24 @@ export async function GET(
   const url = new URL(_req.url);
   const teamId = url.searchParams.get("teamId");
 
-  const conditions = [eq(memberships.organizationId, orgId)];
   if (teamId) {
-    conditions.push(eq(memberships.teamId, teamId));
+    const rows = await db
+      .select({
+        id: memberships.id,
+        userId: memberships.userId,
+        teamId: memberships.teamId,
+        createdAt: memberships.createdAt,
+        user: { id: users.id, email: users.email, name: users.name },
+      })
+      .from(memberships)
+      .innerJoin(users, eq(memberships.userId, users.id))
+      .where(and(eq(memberships.organizationId, orgId), eq(memberships.teamId, teamId)))
+      .orderBy(users.name);
+    return NextResponse.json(rows);
   }
 
   const rows = await db
-    .select({
+    .selectDistinctOn([memberships.userId], {
       id: memberships.id,
       userId: memberships.userId,
       teamId: memberships.teamId,
@@ -30,8 +41,8 @@ export async function GET(
     })
     .from(memberships)
     .innerJoin(users, eq(memberships.userId, users.id))
-    .where(and(...conditions))
-    .orderBy(users.name);
+    .where(eq(memberships.organizationId, orgId))
+    .orderBy(memberships.userId);
 
   return NextResponse.json(rows);
 }
