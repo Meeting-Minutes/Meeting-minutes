@@ -11,19 +11,30 @@ import {
   meetingOverrides,
 } from "../db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { getPermissionKeys, hasPermission } from "./permissions";
+import { getPermissionKeys, hasPermission, isRoleScopeValid } from "./permissions";
 
 async function main() {
   const permId = crypto.randomUUID();
   const permKey = `_test_p_${crypto.randomUUID().slice(0, 8)}`;
 
+  const [superPerm] = await db
+    .select({ id: permissions.id })
+    .from(permissions)
+    .where(eq(permissions.key, "superuser"))
+    .limit(1);
+  const superPermId = superPerm!.id;
+
   const orgId = crypto.randomUUID();
   const userId1 = crypto.randomUUID();
   const userId2 = crypto.randomUUID();
   const userId3 = crypto.randomUUID();
+  const userId4 = crypto.randomUUID();
+  const userId5 = crypto.randomUUID();
   const teamId1 = crypto.randomUUID();
   const teamId2 = crypto.randomUUID();
   const roleId = crypto.randomUUID();
+  const teamRoleId = crypto.randomUUID();
+  const superRoleId = crypto.randomUUID();
   const meetingId = crypto.randomUUID();
 
   // --- Setup ---
@@ -33,23 +44,35 @@ async function main() {
     { id: userId1, email: `u1_${crypto.randomUUID().slice(0, 8)}@test`, name: "U1" },
     { id: userId2, email: `u2_${crypto.randomUUID().slice(0, 8)}@test`, name: "U2" },
     { id: userId3, email: `u3_${crypto.randomUUID().slice(0, 8)}@test`, name: "U3" },
+    { id: userId4, email: `u4_${crypto.randomUUID().slice(0, 8)}@test`, name: "U4" },
+    { id: userId5, email: `u5_${crypto.randomUUID().slice(0, 8)}@test`, name: "U5" },
   ]) {
     await db.insert(users).values(u);
   }
 
   await db.insert(permissions).values({ id: permId, key: permKey, description: "test permission" });
 
-  await db.insert(roles).values({ id: roleId, name: "TestRole", orgId });
-  await db.insert(rolePermissions).values({ roleId, permissionId: permId });
-
   await db.insert(teams).values([
     { id: teamId1, orgId, name: "Team A" },
     { id: teamId2, orgId, name: "Team B" },
   ]);
 
+  await db.insert(roles).values([
+    { id: roleId, name: "TestRole", orgId },
+    { id: teamRoleId, name: "TeamRole", orgId, teamId: teamId2 },
+    { id: superRoleId, name: "SuperRole", orgId },
+  ]);
+  await db.insert(rolePermissions).values([
+    { roleId, permissionId: permId },
+    { roleId: teamRoleId, permissionId: permId },
+    { roleId: superRoleId, permissionId: superPermId },
+  ]);
+
   await db.insert(memberships).values([
     { userId: userId1, organizationId: orgId, roleId },
     { userId: userId2, organizationId: orgId, teamId: teamId1, roleId },
+    { userId: userId4, organizationId: orgId, teamId: teamId2, roleId: teamRoleId },
+    { userId: userId5, organizationId: orgId, roleId: superRoleId },
   ]);
 
   await db.insert(meetings).values({ id: meetingId, orgId, title: "PermCheck Meeting", scheduledAt: new Date() });
@@ -82,17 +105,50 @@ async function main() {
   );
   console.log("Test 4 OK: hasPermission wrapper works");
 
+  // --- Test 5: team-scoped role (role itself scoped to a team) ---
+  const keys5a = await getPermissionKeys({ userId: userId4, orgId, teamId: teamId2 });
+  console.assert(keys5a.has(permKey), "Test 5a FAIL: team-scoped role should grant permission on its own team");
+  console.log("Test 5a OK: team-scoped role grants permission on its own team");
+
+  const keys5b = await getPermissionKeys({ userId: userId4, orgId, teamId: teamId1 });
+  console.assert(!keys5b.has(permKey), "Test 5b FAIL: team-scoped role should NOT grant permission on sibling team");
+  console.log("Test 5b OK: team-scoped role does NOT grant permission on sibling team");
+
+  const keys5c = await getPermissionKeys({ userId: userId4, orgId });
+  console.assert(!keys5c.has(permKey), "Test 5c FAIL: team-scoped role should NOT grant org-wide permission");
+  console.log("Test 5c OK: team-scoped role does NOT grant org-wide permission");
+
+  // --- Test 6: isRoleScopeValid guard ---
+  console.assert(
+    isRoleScopeValid(null, null) && isRoleScopeValid(null, teamId1) && isRoleScopeValid(teamId1, teamId1),
+    "Test 6a FAIL: valid role/membership scope combos rejected",
+  );
+  console.assert(
+    !isRoleScopeValid(teamId1, null) && !isRoleScopeValid(teamId1, teamId2),
+    "Test 6b FAIL: invalid role/membership scope combos accepted",
+  );
+  console.log("Test 6 OK: role scope validation works");
+
+  // --- Test 7: superuser grants any permission via hasPermission ---
+  console.assert(
+    await hasPermission({ userId: userId5, orgId }, `_unassigned_${crypto.randomUUID().slice(0, 8)}`),
+    "Test 7 FAIL: superuser should grant any permission",
+  );
+  console.log("Test 7 OK: superuser grants any permission");
+
   // --- Cleanup ---
   await db.delete(meetingOverrides).where(
     and(eq(meetingOverrides.meetingId, meetingId), eq(meetingOverrides.userId, userId3)),
   );
   await db.delete(meetings).where(eq(meetings.id, meetingId));
   await db.delete(memberships).where(eq(memberships.organizationId, orgId));
-  await db.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId));
-  await db.delete(roles).where(eq(roles.id, roleId));
+  await db.delete(rolePermissions).where(
+    inArray(rolePermissions.roleId, [roleId, teamRoleId, superRoleId]),
+  );
+  await db.delete(roles).where(inArray(roles.id, [roleId, teamRoleId, superRoleId]));
   await db.delete(teams).where(eq(teams.orgId, orgId));
   await db.delete(permissions).where(eq(permissions.id, permId));
-  await db.delete(users).where(inArray(users.id, [userId1, userId2, userId3]));
+  await db.delete(users).where(inArray(users.id, [userId1, userId2, userId3, userId4, userId5]));
   await db.delete(organizations).where(eq(organizations.id, orgId));
 
   console.log("\nAll permission checks passed");

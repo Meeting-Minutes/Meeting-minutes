@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { roles } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { canManageOrgRoles } from "@/lib/permissions";
 
 export async function GET(
   _req: Request,
@@ -12,10 +13,14 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
+  if (!(await canManageOrgRoles(user.id, orgId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const rows = await db
     .select()
     .from(roles)
-    .where(eq(roles.orgId, orgId))
+    .where(and(eq(roles.orgId, orgId), isNull(roles.teamId)))
     .orderBy(roles.name);
 
   return NextResponse.json(rows);
@@ -29,6 +34,10 @@ export async function POST(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
+  if (!(await canManageOrgRoles(user.id, orgId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { name } = await req.json();
 
   if (!name || typeof name !== "string") {
@@ -51,6 +60,10 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
+  if (!(await canManageOrgRoles(user.id, orgId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { roleId, name } = await req.json();
 
   if (!roleId) {
@@ -60,7 +73,7 @@ export async function PATCH(
   const [role] = await db
     .update(roles)
     .set({ name })
-    .where(eq(roles.id, roleId))
+    .where(and(eq(roles.id, roleId), eq(roles.orgId, orgId), isNull(roles.teamId)))
     .returning();
 
   if (!role) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -68,20 +81,27 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ orgId: string }> },
 ) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
-  const url = new URL(_req.url);
+  if (!(await canManageOrgRoles(user.id, orgId))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const url = new URL(req.url);
   const roleId = url.searchParams.get("roleId");
 
   if (!roleId) {
     return NextResponse.json({ error: "roleId is required" }, { status: 400 });
   }
 
-  await db.delete(roles).where(eq(roles.id, roleId));
+  await db
+    .delete(roles)
+    .where(and(eq(roles.id, roleId), eq(roles.orgId, orgId), isNull(roles.teamId)));
+
   return NextResponse.json({ success: true });
 }

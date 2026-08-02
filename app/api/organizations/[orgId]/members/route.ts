@@ -1,8 +1,29 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { memberships, users } from "@/db/schema";
+import { memberships, users, roles } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { isRoleScopeValid } from "@/lib/permissions";
+
+async function validateRole(
+  orgId: string,
+  teamId: string | null | undefined,
+  roleId: string | null | undefined,
+): Promise<{ roleId: string | null } | { error: string; status: number }> {
+  if (!roleId) return { roleId: null };
+  const [role] = await db
+    .select()
+    .from(roles)
+    .where(eq(roles.id, roleId))
+    .limit(1);
+  if (!role) return { error: "Role not found", status: 404 };
+  if (role.orgId !== orgId) return { error: "Role does not belong to this org", status: 400 };
+  const membershipTeamId = teamId || null;
+  if (!isRoleScopeValid(role.teamId, membershipTeamId)) {
+    return { error: "Role scope does not match the membership's team", status: 400 };
+  }
+  return { roleId };
+}
 
 export async function GET(
   _req: Request,
@@ -71,13 +92,18 @@ export async function POST(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const role = await validateRole(orgId, teamId, roleId);
+  if ("error" in role) {
+    return NextResponse.json({ error: role.error }, { status: role.status });
+  }
+
   const [membership] = await db
     .insert(memberships)
     .values({
       userId: targetUser.id,
       organizationId: orgId,
       teamId: teamId || null,
-      roleId: roleId || null,
+      roleId: role.roleId,
     })
     .onConflictDoNothing()
     .returning();
@@ -106,6 +132,11 @@ export async function PATCH(
     return NextResponse.json({ error: "userId is required" }, { status: 400 });
   }
 
+  const role = await validateRole(orgId, teamId, roleId);
+  if ("error" in role) {
+    return NextResponse.json({ error: role.error }, { status: role.status });
+  }
+
   const conditions = [
     eq(memberships.userId, userId),
     eq(memberships.organizationId, orgId),
@@ -118,7 +149,7 @@ export async function PATCH(
 
   const [membership] = await db
     .update(memberships)
-    .set({ roleId: roleId || null })
+    .set({ roleId: role.roleId })
     .where(and(...conditions))
     .returning();
 

@@ -148,6 +148,7 @@ Seeded by `db/seed/permissions.ts`. 12 fixed keys:
 | `manage_teams`            | Create, edit, or delete teams                    |
 | `manage_templates`        | Create, edit, or delete minute templates         |
 | `manage_tags`             | Manage the organization's tag catalog            |
+| `manage_team_roles`       | Manage roles scoped to a specific team           |
 | `export_minutes`          | Generate PDF/DOCX exports of minutes             |
 | `view_audit_log`          | View the organization's audit log                |
 | `superuser`               | Complete control over the organization           |
@@ -159,6 +160,17 @@ to roles is fully dynamic via `role_permissions` rows.
 ---
 
 ## 7. Schema changes
+
+### `roles` — added `team_id`
+
+```ts
+teamId: uuid("team_id").references(() => teams.id, { onDelete: "cascade" }),
+```
+
+Nullable. `NULL` = org-wide role; set = role scoped to that team. Deleting a
+team cascades to its scoped roles; the `memberships.role_id` FK is `SET NULL`,
+so memberships referencing a deleted role keep their row but lose the
+assignment.
 
 ### `memberships` — added `role_id`
 
@@ -220,7 +232,8 @@ patterns as the existing teams/members routes.
 
 ### `GET /api/organizations/[orgId]/roles`
 
-List all roles for the org.
+List all org-wide roles for the org (`roles.team_id IS NULL`). Requires
+`manage_roles` (org-wide).
 
 ### `POST /api/organizations/[orgId]/roles`
 
@@ -228,7 +241,8 @@ List all roles for the org.
 { "name": "Secretary" }
 ```
 
-Creates a new role with zero permissions attached. Returns the role.
+Creates a new org-wide role with zero permissions attached. Returns the role.
+Requires `manage_roles`.
 
 ### `PATCH /api/organizations/[orgId]/roles`
 
@@ -236,12 +250,48 @@ Creates a new role with zero permissions attached. Returns the role.
 { "roleId": "...", "name": "Co-chair" }
 ```
 
-Rename a role. The role must belong to the org.
+Rename an org-wide role. The role must belong to the org and be org-wide.
+Requires `manage_roles`.
 
 ### `DELETE /api/organizations/[orgId]/roles?roleId=...`
 
-Delete a role. The FK on `memberships.roleId` is `SET NULL`, so existing
-memberships keep their row but lose their role assignment.
+Delete an org-wide role. The FK on `memberships.roleId` is `SET NULL`, so
+existing memberships keep their row but lose their role assignment. Requires
+`manage_roles`.
+
+### Team-scoped roles
+
+Sub-committees get their own role set (`roles.team_id = <team>`), managed
+independently from the org-wide set. Requires `manage_team_roles` on that team,
+or `manage_roles` org-wide.
+
+### `GET /api/teams/[teamId]/roles`
+
+List roles scoped to that team.
+
+### `POST /api/teams/[teamId]/roles`
+
+```json
+{ "name": "Lead" }
+```
+
+Creates a role scoped to the team.
+
+### `PATCH /api/teams/[teamId]/roles`
+
+```json
+{ "roleId": "...", "name": "Coordinator" }
+```
+
+Rename a team-scoped role.
+
+### `DELETE /api/teams/[teamId]/roles`
+
+```json
+{ "roleId": "..." }
+```
+
+Delete a team-scoped role.
 
 ### `GET /api/permissions`
 
@@ -249,7 +299,9 @@ List the global permission catalog (12 fixed keys, seeded). Read-only.
 
 ### `GET /api/organizations/[orgId]/roles/[roleId]/permissions`
 
-List the permissions currently attached to a role.
+List the permissions currently attached to a role. Requires managing the role:
+`manage_roles` for org-wide roles, `manage_team_roles` (on the role's team) for
+team-scoped roles.
 
 ### `POST /api/organizations/[orgId]/roles/[roleId]/permissions`
 
@@ -257,7 +309,8 @@ List the permissions currently attached to a role.
 { "permissionId": "..." }
 ```
 
-Attach a permission to the role. Idempotent (`onConflictDoNothing`).
+Attach a permission to the role. Idempotent (`onConflictDoNothing`). Same
+permission requirement as GET.
 
 ### `DELETE /api/organizations/[orgId]/roles/[roleId]/permissions`
 
@@ -265,7 +318,7 @@ Attach a permission to the role. Idempotent (`onConflictDoNothing`).
 { "permissionId": "..." }
 ```
 
-Detach a permission from the role.
+Detach a permission from the role. Same permission requirement as GET.
 
 ### Member role assignment
 
@@ -275,6 +328,10 @@ Detach a permission from the role.
 ```json
 { "userId": "...", "roleId": "..." }
 ```
+
+Both validate the role against the membership's scope via
+`isRoleScopeValid` — an org-wide membership can only carry an org-wide role; a
+team membership can carry an org-wide role or a role scoped to that exact team.
 
 ---
 
@@ -290,7 +347,8 @@ Detach a permission from the role.
 | `db/migrations/0002_fix_meetings.sql` | Meetings column rename (`sheduled_at` → `scheduled_at`) + add `location`/`description` |
 | `db/migrations/0003_*.sql`        | RBAC migration (meeting_overrides, role_id)           |
 | `app/api/organizations/route.ts`  | Bootstrap fix: create Admin role on org creation    |
-| `app/api/organizations/[orgId]/roles/route.ts` | Role CRUD (list, create, rename, delete) |
+| `app/api/organizations/[orgId]/roles/route.ts` | Org-wide role CRUD (list, create, rename, delete) |
+| `app/api/teams/[teamId]/roles/route.ts` | Team-scoped role CRUD (list, create, rename, delete) |
 | `app/api/organizations/[orgId]/roles/[roleId]/permissions/route.ts` | Attach/detach permissions |
 | `app/api/permissions/route.ts`    | Global permission catalog listing                   |
 | `app/api/organizations/[orgId]/members/route.ts` | Extended with `roleId` on POST/PATCH       |
