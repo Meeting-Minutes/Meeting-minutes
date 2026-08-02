@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { meetings, meetingTeams, teams } from "@/db/schema";
+import { meetings, meetingTeams } from "@/db/schema";
 import { eq, desc, and, or, ilike, gte, lte } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { hasPermission, resolveTeamAccess } from "@/lib/permissions";
 
 export async function GET(
   _req: Request,
@@ -12,12 +13,18 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { teamId } = await params;
+  const access = await resolveTeamAccess(user.id, teamId);
+  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const url = new URL(_req.url);
   const q = url.searchParams.get("q")?.trim();
   const from = url.searchParams.get("from")?.trim();
   const to = url.searchParams.get("to")?.trim();
 
-  const conditions = [eq(meetingTeams.teamId, teamId)];
+  const conditions = [
+    eq(meetingTeams.teamId, teamId),
+    eq(meetings.orgId, access.orgId),
+  ];
 
   if (q) {
     const pattern = `%${q}%`;
@@ -58,27 +65,28 @@ export async function POST(
   if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { teamId } = await params;
+  const access = await resolveTeamAccess(currentUser.id, teamId);
+  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (
+    !(await hasPermission(
+      { userId: currentUser.id, orgId: access.orgId, teamId },
+      "create_meeting",
+    ))
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { title, description, scheduledAt, location } = await req.json();
 
   if (!title || !scheduledAt) {
     return NextResponse.json({ error: "title and scheduledAt are required" }, { status: 400 });
   }
 
-  const [team] = await db
-    .select()
-    .from(teams)
-    .where(eq(teams.id, teamId))
-    .limit(1);
-
-  if (!team) {
-    return NextResponse.json({ error: "Team not found" }, { status: 404 });
-  }
-
   const meetingId = crypto.randomUUID();
 
   await db.insert(meetings).values({
     id: meetingId,
-    orgId: team.orgId,
+    orgId: access.orgId,
     title,
     description: description || null,
     scheduledAt: new Date(scheduledAt),

@@ -8,10 +8,15 @@ import {
   rolePermissions,
   memberships,
   meetings,
+  meetingTeams,
   meetingOverrides,
 } from "../db/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { getPermissionKeys, hasPermission } from "./permissions";
+import {
+  getPermissionKeys,
+  hasPermission,
+  resolveMeetingAccess,
+} from "./permissions";
 
 async function main() {
   const permId = crypto.randomUUID();
@@ -25,6 +30,8 @@ async function main() {
   const teamId2 = crypto.randomUUID();
   const roleId = crypto.randomUUID();
   const meetingId = crypto.randomUUID();
+  const teamMeetingId1 = crypto.randomUUID();
+  const teamMeetingId2 = crypto.randomUUID();
 
   // --- Setup ---
   await db.insert(organizations).values({ id: orgId, name: "PermCheck Org", slug: `permcheck-${crypto.randomUUID().slice(0, 8)}` });
@@ -54,6 +61,14 @@ async function main() {
 
   await db.insert(meetings).values({ id: meetingId, orgId, title: "PermCheck Meeting", scheduledAt: new Date() });
   await db.insert(meetingOverrides).values({ meetingId, userId: userId3, roleId });
+  await db.insert(meetings).values([
+    { id: teamMeetingId1, orgId, title: "Team A Meeting", scheduledAt: new Date() },
+    { id: teamMeetingId2, orgId, title: "Team B Meeting", scheduledAt: new Date() },
+  ]);
+  await db.insert(meetingTeams).values([
+    { meetingId: teamMeetingId1, teamId: teamId1 },
+    { meetingId: teamMeetingId2, teamId: teamId2 },
+  ]);
 
   // --- Test 1: org-wide role ---
   const keys1 = await getPermissionKeys({ userId: userId1, orgId });
@@ -82,11 +97,31 @@ async function main() {
   );
   console.log("Test 4 OK: hasPermission wrapper works");
 
+  // --- Test 5: resource scope follows the team's membership ---
+  console.assert(
+    (await resolveMeetingAccess(userId2, teamMeetingId1))?.orgId === orgId,
+    "Test 5a FAIL: team member should access a meeting in their team",
+  );
+  console.assert(
+    (await resolveMeetingAccess(userId2, teamMeetingId2)) === null,
+    "Test 5b FAIL: team member should not access another team's meeting",
+  );
+  console.assert(
+    (await getPermissionKeys({ userId: userId2, orgId, meetingId: teamMeetingId1 })).has(permKey),
+    "Test 5c FAIL: meeting permission should resolve from the meeting's team",
+  );
+  console.assert(
+    !(await getPermissionKeys({ userId: userId2, orgId: crypto.randomUUID(), meetingId: teamMeetingId1 })).has(permKey),
+    "Test 5d FAIL: meeting permission must not cross organizations",
+  );
+  console.log("Test 5 OK: team and organization meeting isolation works");
+
   // --- Cleanup ---
   await db.delete(meetingOverrides).where(
     and(eq(meetingOverrides.meetingId, meetingId), eq(meetingOverrides.userId, userId3)),
   );
   await db.delete(meetings).where(eq(meetings.id, meetingId));
+  await db.delete(meetings).where(inArray(meetings.id, [teamMeetingId1, teamMeetingId2]));
   await db.delete(memberships).where(eq(memberships.organizationId, orgId));
   await db.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId));
   await db.delete(roles).where(eq(roles.id, roleId));

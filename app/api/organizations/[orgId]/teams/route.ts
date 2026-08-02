@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { teams, memberships } from "@/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { randomUUID } from "node:crypto";
+import { hasPermission, resolveOrganizationAccess } from "@/lib/permissions";
 
 export async function GET(
   _req: Request,
@@ -13,10 +14,16 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
+  const access = await resolveOrganizationAccess(user.id, orgId);
+  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const visibility = access.orgWide
+    ? eq(teams.orgId, orgId)
+    : and(eq(teams.orgId, orgId), inArray(teams.id, access.teamIds));
   const rows = await db
     .select()
     .from(teams)
-    .where(eq(teams.orgId, orgId))
+    .where(visibility)
     .orderBy(teams.name);
 
   return NextResponse.json(rows);
@@ -30,6 +37,10 @@ export async function POST(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
+  if (!(await hasPermission({ userId: user.id, orgId }, "manage_teams"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { name, description, parentTeamId } = await req.json();
 
   if (!name || typeof name !== "string") {
@@ -37,6 +48,15 @@ export async function POST(
   }
 
   const teamId = randomUUID();
+
+  if (parentTeamId) {
+    const [parent] = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(and(eq(teams.id, parentTeamId), eq(teams.orgId, orgId)))
+      .limit(1);
+    if (!parent) return NextResponse.json({ error: "Parent team not found" }, { status: 404 });
+  }
 
   const [team] = await db
     .insert(teams)
@@ -77,6 +97,10 @@ export async function PATCH(
   const { orgId } = await params;
   const { teamId, name, description } = await req.json();
 
+  if (!(await hasPermission({ userId: user.id, orgId }, "manage_teams"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   if (!teamId) {
     return NextResponse.json({ error: "teamId is required" }, { status: 400 });
   }
@@ -87,7 +111,7 @@ export async function PATCH(
       ...(name !== undefined && { name }),
       ...(description !== undefined && { description: description || null }),
     })
-    .where(eq(teams.id, teamId))
+    .where(and(eq(teams.id, teamId), eq(teams.orgId, orgId)))
     .returning();
 
   if (!team) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -109,6 +133,10 @@ export async function DELETE(
     return NextResponse.json({ error: "teamId is required" }, { status: 400 });
   }
 
-  await db.delete(teams).where(eq(teams.id, teamId));
+  if (!(await hasPermission({ userId: user.id, orgId }, "manage_teams"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await db.delete(teams).where(and(eq(teams.id, teamId), eq(teams.orgId, orgId)));
   return NextResponse.json({ success: true });
 }
