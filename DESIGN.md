@@ -338,6 +338,10 @@ template_sections (ordered) + minutes_sections (content per section)
 - **Bilingual/Devanagari rendering**: the headless-Chromium approach handles this for free as long as the container has the right fonts installed (e.g. Noto Sans Devanagari) — this is an infra/Docker concern (`ponytail:` add the font package to the Dockerfile when this becomes real; ceiling is font licensing/availability, not a code problem).
 - **Generation timing**: on-demand (user clicks export) is the lazy default. Only pre-generate at approval time if bulk-export/bulk-email volume makes on-demand generation too slow in practice — don't build a background job queue for this until the numbers actually justify it.
 
+### Operations for a non-specialist admin
+
+The system is run by org staff, not dedicated IT. Backups and updates are deliberately two plain commands (`bun run db:backup`, `bun run db:restore <file>`, `bun run update`) that shell out to the Postgres container — no host-side DB client tools. `scripts/backup.sh`, `scripts/restore.sh`, and `scripts/update.sh` are thin wrappers over `docker compose exec db pg_dump/psql` plus `drizzle-kit migrate`. A cron job running `bun run db:backup` is the entire automated-dr strategy for now; restore is documented as a manual step, and the backup is a full `pg_dump` SQL file, not incremental. Ceiling: at real data scale this becomes `pg_basebackup`/WAL archiving or managed-Postgres snapshots — add when the numbers demand it.
+
 ---
 
 ## 8. Open implementation questions
