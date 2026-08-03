@@ -27,7 +27,7 @@ export async function GET(
     .where(and(eq(templates.id, templateId), eq(templates.orgId, orgId)))
     .limit(1);
   if (!tmpl) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(tmpl);
+  return NextResponse.json({ ...tmpl, fields: tmpl.fields ?? [] });
 }
 
 export async function PATCH(

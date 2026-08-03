@@ -26,7 +26,7 @@ export async function GET(
     .from(templates)
     .where(eq(templates.orgId, orgId))
     .orderBy(templates.name);
-  return NextResponse.json(rows);
+  return NextResponse.json(rows.map((r) => ({ ...r, fields: r.fields ?? [] })));
 }
 
 export async function POST(

@@ -64,7 +64,7 @@ export async function GET(
       .from(templates)
       .where(eq(templates.id, templateId))
       .limit(1);
-    template = tmpl ?? null;
+    template = tmpl ? { ...tmpl, fields: tmpl.fields ?? [] } : null;
     if (template?.texPath) {
       try { templateSource = readFileSync(resolve(template.texPath), "utf-8"); } catch { /* file missing */ }
     }
