@@ -18,6 +18,21 @@ export interface PermissionParams {
   meetingId?: string;
 }
 
+// The org-wide permissions that define an org's administrator. Admin is just
+// one role among many — named and configurable like any other — not a
+// special-cased concept. It deliberately excludes `superuser`, so a founder
+// can later split admin into narrower roles without code changes.
+export const ADMIN_PERMISSION_KEYS = [
+  "manage_roles",
+  "manage_members",
+  "manage_org",
+  "manage_teams",
+  "manage_templates",
+  "manage_tags",
+  "manage_team_roles",
+  "view_audit_log",
+];
+
 export interface OrganizationAccess {
   orgWide: boolean;
   teamIds: string[];

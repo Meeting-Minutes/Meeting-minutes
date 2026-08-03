@@ -17,6 +17,7 @@ export async function seedPermissions() {
       { id: randomUUID(), key: "manage_templates", description: "Create, edit, or delete minute templates" },
       { id: randomUUID(), key: "manage_tags", description: "Manage the organization's tag catalog" },
       { id: randomUUID(), key: "manage_team_roles", description: "Manage roles scoped to a specific team" },
+      { id: randomUUID(), key: "manage_roles", description: "Manage org-wide roles" },
       { id: randomUUID(), key: "export_minutes", description: "Generate PDF/DOCX exports of minutes" },
       { id: randomUUID(), key: "view_audit_log", description: "View the organization's audit log" },
       { id: randomUUID(), key: "superuser", description: "Complete control over the organization" }
