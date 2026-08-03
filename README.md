@@ -69,6 +69,18 @@ Generated migration files (`db/migrations/`) are committed to git — they're th
 | `bun drizzle-kit studio`   | Open Drizzle Studio to browse the DB                             |
 | `bun run db:check`         | Sanity-check the DB connection (insert/select/delete round trip) |
 
+### Day-to-day operations (for a non-specialist admin)
+
+Backups and updates are two commands, no Postgres knowledge required:
+
+| Task                 | Command                          | Notes                                                                 |
+| -------------------- | -------------------------------- | --------------------------------------------------------------------- |
+| Back up the database | `bun run db:backup`              | Writes a timestamped SQL file to `backups/`. Copy it off the machine. |
+| Restore a backup     | `bun run db:restore <file>`      | Loads the file, then re-runs migrations.                              |
+| Update the install   | `bun run update`                 | Pulls code, installs deps, applies new migrations. Safe to re-run.    |
+
+Everything that talks to the database runs inside the `db` Docker container, so no `pg_dump`/`psql` need to be installed on the host. To automate backups, put `bun run db:backup` on a cron/task-scheduler job.
+
 ## Table of Contents
 
 - [Getting Started](#getting-started)
