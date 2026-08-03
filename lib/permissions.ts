@@ -233,3 +233,37 @@ export async function hasPermission(
   const keys = await getPermissionKeys(params);
   return keys.has(key) || keys.has("superuser");
 }
+
+/**
+ * A membership scoped to `membershipTeamId` (null = org-wide) may only carry a
+ * role whose own scope is compatible: an org-wide membership can only hold an
+ * org-wide role, while a team membership can hold either an org-wide role or a
+ * role scoped to that exact team. Prevents "promoting" a team-scoped role to
+ * org-wide or borrowing a role from a sibling team.
+ */
+export function isRoleScopeValid(
+  roleTeamId: string | null,
+  membershipTeamId: string | null,
+): boolean {
+  if (membershipTeamId === null) return roleTeamId === null;
+  return roleTeamId === null || roleTeamId === membershipTeamId;
+}
+
+/** Can `userId` manage org-wide roles in `orgId`? (org-scoped `manage_roles`.) */
+export async function canManageOrgRoles(
+  userId: string,
+  orgId: string,
+): Promise<boolean> {
+  const keys = await getPermissionKeys({ userId, orgId });
+  return keys.has("superuser") || keys.has("manage_roles");
+}
+
+/** Can `userId` manage team-scoped roles of `teamId`? (org `manage_roles` or team `manage_team_roles`.) */
+export async function canManageTeamRoles(
+  userId: string,
+  orgId: string,
+  teamId: string,
+): Promise<boolean> {
+  const keys = await getPermissionKeys({ userId, orgId, teamId });
+  return keys.has("superuser") || keys.has("manage_roles") || keys.has("manage_team_roles");
+}
