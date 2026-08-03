@@ -1,4 +1,5 @@
-import { and, eq, isNull, or } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, eq, isNull, or, ne } from "drizzle-orm";
 import { db } from "@/db";
 import {
   memberships,
@@ -18,24 +19,38 @@ export interface PermissionParams {
   meetingId?: string;
 }
 
-// The org-wide permissions that define an org's administrator. Admin is just
-// one role among many — named and configurable like any other — not a
-// special-cased concept. It deliberately excludes `superuser`, so a founder
-// can later split admin into narrower roles without code changes.
-export const ADMIN_PERMISSION_KEYS = [
-  "manage_roles",
-  "manage_members",
-  "manage_org",
-  "manage_teams",
-  "manage_templates",
-  "manage_tags",
-  "manage_team_roles",
-  "view_audit_log",
-];
-
 export interface OrganizationAccess {
   orgWide: boolean;
   teamIds: string[];
+}
+
+// Bootstrap an org's founding admin: an org-wide "Admin" role holding every
+// catalog permission except `superuser` (reserved, so admin stays splittable),
+// plus the founder's org-wide membership carrying that role. Shared by org
+// creation, the demo seed, and the one-off backfill so the model stays single.
+export async function bootstrapOrgAdmin(
+  orgId: string,
+  userId: string,
+): Promise<void> {
+  const adminPerms = await db
+    .select({ id: permissions.id })
+    .from(permissions)
+    .where(ne(permissions.key, "superuser"));
+  if (adminPerms.length === 0) {
+    throw new Error("Permission catalog is empty; run the seed");
+  }
+  const [adminRole] = await db
+    .insert(roles)
+    .values({ id: randomUUID(), name: "Admin", orgId })
+    .returning();
+  await db.insert(rolePermissions).values(
+    adminPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
+  );
+  await db.insert(memberships).values({
+    userId,
+    organizationId: orgId,
+    roleId: adminRole.id,
+  });
 }
 
 export async function resolveOrganizationAccess(

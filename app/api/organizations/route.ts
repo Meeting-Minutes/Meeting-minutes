@@ -3,13 +3,10 @@ import { db } from "@/db";
 import {
   organizations,
   memberships,
-  roles,
-  permissions as permissionsTable,
-  rolePermissions,
 } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
-import { ADMIN_PERMISSION_KEYS } from "@/lib/permissions";
+import { bootstrapOrgAdmin } from "@/lib/permissions";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -41,39 +38,21 @@ export async function POST(req: Request) {
 
   const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 
-  const adminPerms = await db
-    .select({ id: permissionsTable.id })
-    .from(permissionsTable)
-    .where(inArray(permissionsTable.key, ADMIN_PERMISSION_KEYS));
-
-  if (adminPerms.length !== ADMIN_PERMISSION_KEYS.length) {
-    // A missing permission key means the seed catalog isn't applied — failing
-    // here beats silently creating a founder role with an incomplete set.
-    return NextResponse.json(
-      { error: "Server misconfigured: permission catalog incomplete" },
-      { status: 500 },
-    );
-  }
-
   const [org] = await db
     .insert(organizations)
     .values({ name, description: description || null, slug })
     .returning();
 
-  const [adminRole] = await db
-    .insert(roles)
-    .values({ id: crypto.randomUUID(), name: "Admin", orgId: org.id })
-    .returning();
-
-  await db.insert(rolePermissions).values(
-    adminPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
-  );
-
-  await db.insert(memberships).values({
-    userId: user.id,
-    organizationId: org.id,
-    roleId: adminRole.id,
-  });
+  try {
+    await bootstrapOrgAdmin(org.id, user.id);
+  } catch (err) {
+    // Roll back the org so we don't leave a member with a role-less founder.
+    await db.delete(organizations).where(eq(organizations.id, org.id));
+    return NextResponse.json(
+      { error: (err as Error).message },
+      { status: 500 },
+    );
+  }
 
   return NextResponse.json(org, { status: 201 });
 }

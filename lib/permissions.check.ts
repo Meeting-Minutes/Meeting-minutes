@@ -16,7 +16,6 @@ import {
   getPermissionKeys,
   hasPermission,
   resolveMeetingAccess,
-  ADMIN_PERMISSION_KEYS,
 } from "./permissions";
 
 async function main() {
@@ -144,15 +143,21 @@ async function main() {
   const catalogKeys = new Set(
     (await db.select({ key: permissions.key }).from(permissions)).map((r) => r.key),
   );
-  for (const key of ADMIN_PERMISSION_KEYS) {
+  // The bootstrap admin must cover the full catalog minus superuser (the
+  // static-list approach regressed: founders lost create_meeting, etc.).
+  const expectedAdmin = new Set([...catalogKeys].filter((k) => k !== "superuser"));
+  for (const key of expectedAdmin) {
     if (!catalogKeys.has(key)) {
-      throw new Error(`Test 6 FAIL: seed catalog is missing an admin permission: ${key}`);
+      throw new Error(`Test 6 FAIL: seed catalog is missing a permission: ${key}`);
     }
   }
-  if (ADMIN_PERMISSION_KEYS.includes("superuser")) {
+  if (!catalogKeys.has("create_meeting") || !catalogKeys.has("manage_roles")) {
+    throw new Error("Test 6 FAIL: seed catalog must include create_meeting and manage_roles");
+  }
+  if (catalogKeys.has("superuser") && expectedAdmin.has("superuser")) {
     throw new Error("Test 6b FAIL: admin bootstrap must not grant superuser (keeps admin splittable)");
   }
-  console.log("Test 6 OK: admin permission set is complete and superuser-free");
+  console.log("Test 6 OK: bootstrap admin covers the full catalog minus superuser");
 
   // --- Cleanup ---
   await db.delete(meetingOverrides).where(

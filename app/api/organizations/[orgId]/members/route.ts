@@ -9,7 +9,6 @@ import {
   resolveOrganizationAccess,
   hasPermission,
 } from "@/lib/permissions";
-
 async function validateRole(
   orgId: string,
   teamId: string | null | undefined,
@@ -98,8 +97,13 @@ export async function POST(
   const { orgId } = await params;
   const { email, teamId, roleId } = await req.json();
 
-  const teamAccess = await resolveTeamAccess(currentUser.id, teamId);
-  if (teamAccess?.orgId !== orgId) {
+  const access = teamId
+    ? await resolveTeamAccess(currentUser.id, teamId)
+    : await resolveOrganizationAccess(currentUser.id, orgId);
+  const ok = teamId
+    ? access !== null && (access as { orgId: string }).orgId === orgId
+    : access !== null;
+  if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   if (
@@ -161,8 +165,13 @@ export async function PATCH(
   const { orgId } = await params;
   const { userId, teamId, roleId } = await req.json();
 
-  const teamAccess = await resolveTeamAccess(currentUser.id, teamId);
-  if (teamAccess?.orgId !== orgId) {
+  const access = teamId
+    ? await resolveTeamAccess(currentUser.id, teamId)
+    : await resolveOrganizationAccess(currentUser.id, orgId);
+  const ok = teamId
+    ? access !== null && (access as { orgId: string }).orgId === orgId
+    : access !== null;
+  if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   if (
@@ -213,8 +222,13 @@ export async function DELETE(
   const { orgId } = await params;
   const { userId, teamId } = await req.json();
 
-  const teamAccess = await resolveTeamAccess(currentUser.id, teamId);
-  if (teamAccess?.orgId !== orgId) {
+  const access = teamId
+    ? await resolveTeamAccess(currentUser.id, teamId)
+    : await resolveOrganizationAccess(currentUser.id, orgId);
+  const ok = teamId
+    ? access !== null && (access as { orgId: string }).orgId === orgId
+    : access !== null;
+  if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   if (

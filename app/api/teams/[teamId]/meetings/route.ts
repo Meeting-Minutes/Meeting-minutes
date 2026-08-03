@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { meetings, meetingTeams } from "@/db/schema";
+import { meetings, meetingTeams, templates } from "@/db/schema";
 import { eq, desc, and, or, ilike, gte, lte } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission, resolveTeamAccess } from "@/lib/permissions";
@@ -76,10 +76,21 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { title, description, scheduledAt, location } = await req.json();
+  const { title, description, scheduledAt, location, templateId } = await req.json();
 
   if (!title || !scheduledAt) {
     return NextResponse.json({ error: "title and scheduledAt are required" }, { status: 400 });
+  }
+
+  if (templateId) {
+    const [template] = await db
+      .select({ id: templates.id, orgId: templates.orgId })
+      .from(templates)
+      .where(eq(templates.id, templateId))
+      .limit(1);
+    if (!template || template.orgId !== access.orgId) {
+      return NextResponse.json({ error: "Template not found" }, { status: 400 });
+    }
   }
 
   const meetingId = crypto.randomUUID();
@@ -92,6 +103,7 @@ export async function POST(
     scheduledAt: new Date(scheduledAt),
     location: location || null,
     createdBy: currentUser.id,
+    ...(templateId ? { templateId } : {}),
   });
 
   await db.insert(meetingTeams).values({ meetingId, teamId });
@@ -103,6 +115,7 @@ export async function POST(
       description: meetings.description,
       scheduledAt: meetings.scheduledAt,
       location: meetings.location,
+      templateId: meetings.templateId,
       createdAt: meetings.createdAt,
     })
     .from(meetings)

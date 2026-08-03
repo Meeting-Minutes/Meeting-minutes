@@ -83,3 +83,55 @@ button {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
+
+/* TipTap rich text editor */
+.rich-editor .ProseMirror {
+  min-height: 10rem;
+  outline: none;
+}
+.rich-editor .ProseMirror p {
+  margin: 0.35em 0;
+}
+.rich-editor .ProseMirror h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin: 0.5em 0 0.3em;
+}
+.rich-editor .ProseMirror h2 {
+  font-size: 1.3em;
+  font-weight: 700;
+  margin: 0.5em 0 0.3em;
+}
+.rich-editor .ProseMirror h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.5em 0 0.3em;
+}
+.rich-editor .ProseMirror ul,
+.rich-editor .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.35em 0;
+}
+.rich-editor .ProseMirror ul {
+  list-style: disc;
+}
+.rich-editor .ProseMirror ol {
+  list-style: decimal;
+}
+.rich-editor .ProseMirror a {
+  color: var(--color-text-link);
+  text-decoration: underline;
+}
+.rich-editor .ProseMirror blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 0.75em;
+  margin: 0.35em 0;
+  color: var(--color-text-muted);
+}
+.rich-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-muted);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}

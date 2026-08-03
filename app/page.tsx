@@ -150,7 +150,10 @@ function MembersSection({
 
 function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolean }) {
   return (
-    <div className={`bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4 ${!upcoming ? "opacity-70" : ""}`}>
+    <a
+      href={`/meetings/${meeting.id}`}
+      className={`bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4 block transition-colors hover:border-accent/40 ${!upcoming ? "opacity-70" : ""}`}
+    >
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${upcoming ? "bg-accent/10" : "bg-bg-secondary"}`}>
         <span className={`text-lg font-bold ${upcoming ? "text-accent" : "text-text-muted"}`}>
           {new Date(meeting.scheduledAt).getDate()}
@@ -175,7 +178,7 @@ function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolea
         )}
 
       </div>
-    </div>
+    </a>
   );
 }
 
@@ -186,6 +189,7 @@ export default function Home() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
+  const [showOrgMenu, setShowOrgMenu] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [showNewOrg, setShowNewOrg] = useState(false);
   const [showNewTeam, setShowNewTeam] = useState(false);
@@ -197,6 +201,7 @@ export default function Home() {
   const [addEmail, setAddEmail] = useState("");
   const [showAddMember, setShowAddMember] = useState(false);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
   const [showSchedule, setShowSchedule] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showDateFilter, setShowDateFilter] = useState(false);
@@ -207,6 +212,7 @@ export default function Home() {
   const [meetingTime, setMeetingTime] = useState("");
   const [meetingLocation, setMeetingLocation] = useState("");
   const [meetingDescription, setMeetingDescription] = useState("");
+  const [meetingTemplateId, setMeetingTemplateId] = useState("");
   const [scheduling, setScheduling] = useState(false);
 
   useEffect(() => {
@@ -235,6 +241,14 @@ export default function Home() {
     fetch(`/api/organizations/${activeOrgId}/teams`)
       .then((r) => (r.ok ? r.json() : []))
       .then(setTeams);
+  }, [activeOrgId]);
+
+  // Fetch templates for org
+  useEffect(() => {
+    if (!activeOrgId) return;
+    fetch(`/api/organizations/${activeOrgId}/templates`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setTemplates);
   }, [activeOrgId]);
 
   const fetchMembers = useCallback(async (orgId: string, teamId?: string) => {
@@ -374,7 +388,7 @@ export default function Home() {
     const scheduledAt = `${meetingDate}T${meetingTime}:00`;
     const res = await fetch(`/api/teams/${activeTeamId}/meetings`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: meetingTitle.trim(), description: meetingDescription.trim() || null, scheduledAt, location: meetingLocation.trim() || null }),
+      body: JSON.stringify({ title: meetingTitle.trim(), description: meetingDescription.trim() || null, scheduledAt, location: meetingLocation.trim() || null, ...(meetingTemplateId ? { templateId: meetingTemplateId } : {}) }),
     });
     setScheduling(false);
     if (!res.ok) {
@@ -384,7 +398,7 @@ export default function Home() {
     const meeting = await res.json();
     setMeetings((prev) => [meeting, ...prev]);
     setShowSchedule(false);
-    setMeetingTitle(""); setMeetingDescription(""); setMeetingDate(""); setMeetingTime(""); setMeetingLocation("");
+    setMeetingTitle(""); setMeetingDescription(""); setMeetingDate(""); setMeetingTime(""); setMeetingLocation(""); setMeetingTemplateId("");
   }
 
   async function logout() {
@@ -424,13 +438,41 @@ export default function Home() {
 
       {/* Channel sidebar */}
       <aside className="w-60 bg-bg-secondary flex flex-col shrink-0">
-        <div className="h-12.25 flex items-center px-4 border-b border-border/50 shrink-0">
+        <div className="h-12.25 flex items-center px-4 border-b border-border/50 shrink-0 relative">
           <button
-            onClick={() => setActiveTeamId(null)}
-            className="text-[15px] font-semibold text-text-normal truncate hover:text-accent transition-colors w-full text-left"
+            onClick={() => { setActiveTeamId(null); setShowOrgMenu((v) => !v); }}
+            className="text-[15px] font-semibold text-text-normal truncate hover:text-accent transition-colors w-full text-left flex items-center justify-between gap-2"
           >
-            {activeOrg?.name || "Minutes"}
+            <span className="truncate">{activeOrg?.name || "Minutes"}</span>
+            <svg className="w-4 h-4 text-text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M3 6l5 5 5-5" />
+            </svg>
           </button>
+          {showOrgMenu && activeOrg && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowOrgMenu(false)} />
+              <div className="absolute left-2 right-2 top-full mt-1.5 z-50 bg-bg-tertiary rounded-lg border border-border/50 shadow-xl py-1.5">
+                <button
+                  onClick={() => { setShowOrgMenu(false); setActiveTeamId(null); }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-text-normal hover:bg-surface/60 transition-colors"
+                >
+                  {activeOrg.name}
+                </button>
+                <button
+                  onClick={() => { setShowOrgMenu(false); router.push(`/settings?org=${activeOrg.id}`); }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-text-normal hover:bg-surface/60 transition-colors"
+                >
+                  ⚙ Settings
+                </button>
+                <button
+                  onClick={() => { setShowOrgMenu(false); setError(""); setShowNewTeam(true); }}
+                  className="w-full text-left px-3 py-1.5 text-sm text-text-muted hover:bg-surface/60 transition-colors"
+                >
+                  + New team
+                </button>
+              </div>
+            </>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto px-2 py-3">
           {activeOrgId && (
@@ -886,6 +928,17 @@ export default function Home() {
               className="w-full px-3.5 py-2.5 text-sm mb-4 resize-none"
               disabled={scheduling}
             />
+            <select
+              value={meetingTemplateId}
+              onChange={(e) => setMeetingTemplateId(e.target.value)}
+              className="w-full px-3.5 py-2.5 text-sm mb-4"
+              disabled={scheduling}
+            >
+              <option value="">No template</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
             <div className="flex gap-3 mb-4">
               <input
                 type="date"
