@@ -37,7 +37,7 @@ function FormModal({
 
   return (
     <ModalOverlay onClose={onClose}>
-      <div className="bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
+      <div className="animate-pop-in bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
         <h2 className="text-[17px] font-semibold text-text-normal mb-5">{title}</h2>
         {fields.map((f) =>
           f.multiline ? (
@@ -75,7 +75,7 @@ function FormModal({
           <button
             onClick={() => onSubmit(values)}
             disabled={creating || !values[fields[0].key]?.trim()}
-            className="px-5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover disabled:bg-accent/50 text-white rounded-lg transition-all disabled:cursor-not-allowed"
+            className="btn-primary px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
           >
             {creating ? "Saving\u2026" : buttonLabel}
           </button>
@@ -118,8 +118,12 @@ function MembersSection({
   error: string;
 }) {
   return (
-    <div className="bg-surface rounded-xl border border-border/50 p-4">
-      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+    <div className="card-hover bg-surface rounded-xl border border-border/50 p-4">
+      <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <circle cx="8" cy="5.5" r="2.5" />
+          <path d="M2.5 14c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5" />
+        </svg>
         Members &mdash; {members.length}
       </h3>
       <div className="space-y-0.5">
@@ -138,7 +142,7 @@ function MembersSection({
         <button
           onClick={onAdd}
           disabled={!addEmail.trim()}
-          className="px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover disabled:bg-accent/50 text-white rounded-lg transition-all disabled:cursor-not-allowed"
+          className="btn-primary px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Add
         </button>
@@ -152,19 +156,32 @@ function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolea
   return (
     <a
       href={`/meetings/${meeting.id}`}
-      className={`bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4 block transition-colors hover:border-accent/40 ${!upcoming ? "opacity-70" : ""}`}
+      className={`group card-hover bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4 block ${!upcoming ? "opacity-70 hover:opacity-95" : ""}`}
     >
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${upcoming ? "bg-accent/10" : "bg-bg-secondary"}`}>
-        <span className={`text-lg font-bold ${upcoming ? "text-accent" : "text-text-muted"}`}>
-          {new Date(meeting.scheduledAt).getDate()}
+      <div
+        className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 border ${
+          upcoming
+            ? "bg-gradient-to-br from-[#6b76ff]/25 to-[#3d49e8]/10 border-accent/20 text-accent group-hover:from-[#6b76ff]/35 group-hover:to-[#3d49e8]/15 transition-all duration-300"
+            : "bg-bg-secondary border-border/50 text-text-muted"
+        }`}
+      >
+        <span className="text-lg font-bold leading-none">{new Date(meeting.scheduledAt).getDate()}</span>
+        <span className="text-[9px] uppercase tracking-wide mt-0.5">
+          {new Date(meeting.scheduledAt).toLocaleDateString("en-US", { month: "short" })}
         </span>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text-normal">{meeting.title}</p>
+        <p className="text-sm font-semibold text-text-normal group-hover:text-white transition-colors">{meeting.title}</p>
         {meeting.description && (
           <p className="text-xs text-text-muted mt-0.5 leading-relaxed line-clamp-2">{meeting.description}</p>
         )}
-        <p className="text-xs text-text-muted mt-0.5">
+        <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1.5">
+          <svg className="w-3 h-3 text-text-muted/60" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <rect x="1.5" y="2.5" width="11" height="10" rx="1.5" />
+            <line x1="1.5" y1="5.5" x2="12.5" y2="5.5" />
+            <line x1="4.5" y1="1" x2="4.5" y2="4" />
+            <line x1="9.5" y1="1" x2="9.5" y2="4" />
+          </svg>
           {new Date(meeting.scheduledAt).toLocaleDateString("en-US", {
             weekday: "short", month: "short", day: "numeric",
           })}
@@ -174,10 +191,21 @@ function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolea
           })}
         </p>
         {meeting.location && (
-          <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1">{meeting.location}</p>
+          <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1.5">
+            <svg className="w-3 h-3 text-text-muted/60" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M7 1.5a4 4 0 0 0-4 4c0 3 4 7 4 7s4-4 4-7a4 4 0 0 0-4-4z" />
+              <circle cx="7" cy="5.5" r="1.3" />
+            </svg>
+            {meeting.location}
+          </p>
         )}
-
       </div>
+      <svg
+        className="w-4 h-4 text-accent self-center -translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-200 shrink-0"
+        viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+      >
+        <path d="M3 8h10M9 4l4 4-4 4" />
+      </svg>
     </a>
   );
 }
@@ -418,11 +446,17 @@ export default function Home() {
             key={org.id}
             onClick={() => selectOrg(org.id)}
             title={org.name}
-            className={`w-12 h-12 rounded-2xl transition-all duration-150 flex items-center justify-center font-bold text-lg ${activeOrgId === org.id
-              ? "bg-accent text-white rounded-xl"
-              : "bg-bg-secondary text-text-muted hover:bg-accent hover:text-white hover:rounded-xl"
-              }`}
+            className={`group relative w-12 h-12 rounded-2xl transition-all duration-200 ease-out flex items-center justify-center font-bold text-lg hover:rounded-xl active:scale-95 ${
+              activeOrgId === org.id
+                ? "bg-gradient-to-br from-[#6b76ff] to-[#3d49e8] text-white shadow-[0_4px_14px_-4px_rgba(88,101,242,0.7)]"
+                : "bg-bg-secondary text-text-muted hover:bg-accent hover:text-white hover:shadow-[0_4px_14px_-4px_rgba(88,101,242,0.5)]"
+            }`}
           >
+            <span
+              className={`pill h-0 opacity-0 ${
+                activeOrgId === org.id ? "!h-10 opacity-100" : "group-hover:!h-5 group-hover:opacity-100"
+              }`}
+            />
             {org.name[0].toUpperCase()}
           </button>
         ))}
@@ -430,7 +464,7 @@ export default function Home() {
         <button
           onClick={() => { setError(""); setShowNewOrg(true); }}
           title="New organization"
-          className="w-12 h-12 rounded-2xl hover:rounded-xl hover:bg-success transition-all duration-150 flex items-center justify-center text-text-muted hover:text-white text-2xl font-light border-2 border-dashed border-border hover:border-success"
+          className="w-12 h-12 rounded-2xl hover:rounded-xl hover:bg-success hover:shadow-[0_4px_14px_-4px_rgba(35,165,90,0.6)] transition-all duration-200 ease-out flex items-center justify-center text-text-muted hover:text-white text-2xl font-light border-2 border-dashed border-border hover:border-success active:scale-95"
         >
           +
         </button>
@@ -486,20 +520,26 @@ export default function Home() {
                 <button
                   key={t.id}
                   onClick={() => setActiveTeamId(t.id)}
-                  className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm transition-all duration-150 ${activeTeamId === t.id
-                    ? "bg-surface text-text-normal"
-                    : "text-text-muted hover:bg-surface/50 hover:text-text-normal"
-                    }`}
+                  className={`group relative w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm transition-all duration-150 ${
+                    activeTeamId === t.id
+                      ? "bg-gradient-to-r from-surface to-surface/60 text-text-normal shadow-sm"
+                      : "text-text-muted hover:bg-surface/50 hover:text-text-normal"
+                  }`}
                 >
-                  <span className="text-lg leading-none text-text-muted/60 shrink-0">#</span>
+                  <span
+                    className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r bg-accent transition-all duration-200 ${
+                      activeTeamId === t.id ? "h-5" : "h-0 group-hover:h-3.5"
+                    }`}
+                  />
+                  <span className={`text-lg leading-none shrink-0 transition-colors group-hover:text-accent ${activeTeamId === t.id ? "text-accent" : "text-text-muted/60"}`}>#</span>
                   <span className="truncate text-left">{t.name}</span>
                 </button>
               ))}
               <button
                 onClick={() => { setError(""); setShowNewTeam(true); }}
-                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-text-muted hover:bg-surface/50 hover:text-text-normal transition-all duration-150 mt-0.5"
+                className="group w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-text-muted hover:bg-success/10 hover:text-success transition-all duration-150 mt-0.5"
               >
-                <span className="text-lg leading-none text-text-muted/60 shrink-0">+</span>
+                <span className="text-lg leading-none text-text-muted/60 group-hover:text-success transition-colors shrink-0">+</span>
                 Add team
               </button>
             </>
@@ -512,8 +552,11 @@ export default function Home() {
         </div>
         {user && (
           <div className="h-13.25 shrink-0 bg-bg-tertiary/30 px-3 flex items-center gap-2.5 border-t border-border/50">
-            <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent text-sm font-semibold shrink-0">
-              {user.name[0]}
+            <div className="relative shrink-0">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent/40 to-success/25 flex items-center justify-center text-accent text-sm font-semibold">
+                {user.name[0]}
+              </div>
+              <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-success border-2 border-bg-tertiary" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-text-normal truncate leading-tight">{user.name}</p>
@@ -522,7 +565,7 @@ export default function Home() {
             <button
               onClick={logout}
               title="Sign out"
-              className="text-text-muted hover:text-text-normal transition-colors text-lg leading-none px-1"
+              className="text-text-muted hover:text-danger hover:bg-danger/10 transition-all text-lg leading-none px-1.5 py-1 rounded-md"
             >
               ⏻
             </button>
@@ -538,27 +581,37 @@ export default function Home() {
             <>
               <button
                 onClick={() => setActiveTeamId(null)}
-                className="text-text-muted hover:text-text-normal transition-colors text-sm font-semibold"
+                className="group text-text-muted hover:text-text-normal transition-colors text-sm font-semibold flex items-center gap-1.5"
               >
                 {activeOrg?.name}
+                <svg className="w-3 h-3 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M4.5 2.5L8 6l-3.5 3.5" />
+                </svg>
               </button>
               <span className="text-text-muted mx-2 text-sm">/</span>
-              <span className="font-semibold text-[15px] text-text-normal"># {activeTeam.name}</span>
+              <span className="font-semibold text-[15px] text-text-normal flex items-center gap-1.5">
+                <span className="text-accent">#</span> {activeTeam.name}
+              </span>
               <button
                 onClick={() => { setError(""); setEditingTeam(activeTeam); }}
-                className="ml-auto text-xs text-text-muted hover:text-text-normal transition-colors px-2 py-1 rounded-md hover:bg-surface/50"
+                className="ml-auto text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
               >
-                Edit
+                ✎ Edit
               </button>
             </>
           ) : activeOrg ? (
             <>
-              <span className="font-semibold text-[15px] text-text-normal">{activeOrg.name}</span>
+              <span className="font-semibold text-[15px] text-text-normal flex items-center gap-2">
+                <span className="w-5 h-5 rounded-md bg-gradient-to-br from-[#6b76ff] to-[#3d49e8] flex items-center justify-center text-white text-[10px] font-bold">
+                  {activeOrg.name[0].toUpperCase()}
+                </span>
+                {activeOrg.name}
+              </span>
               <button
                 onClick={() => { setError(""); setEditingOrg(activeOrg); }}
-                className="ml-auto text-xs text-text-muted hover:text-text-normal transition-colors px-2 py-1 rounded-md hover:bg-surface/50"
+                className="ml-auto text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
               >
-                Edit
+                ✎ Edit
               </button>
             </>
           ) : (
@@ -571,10 +624,13 @@ export default function Home() {
           <div className="flex flex-1 min-h-0">
             <div className="flex-1 overflow-y-auto">
               <div className="max-w-3xl mx-auto px-6 py-8 space-y-5">
-                <div>
-                  <h1 className="text-xl font-bold text-text-normal"># {activeTeam.name}</h1>
+                <div className="animate-fade-up">
+                  <h1 className="text-2xl font-bold text-text-normal flex items-center gap-2.5">
+                    <span className="w-9 h-9 rounded-lg bg-accent/15 flex items-center justify-center text-accent text-lg border border-accent/20">#</span>
+                    {activeTeam.name}
+                  </h1>
                   {activeTeam.description && (
-                    <p className="text-sm text-text-muted mt-1 leading-relaxed">{activeTeam.description}</p>
+                    <p className="text-sm text-text-muted mt-1.5 leading-relaxed">{activeTeam.description}</p>
                   )}
                 </div>
 
@@ -669,9 +725,23 @@ export default function Home() {
                 {(() => {
                   if (meetings.length === 0) {
                     return (
-                      <div className="bg-surface rounded-xl border border-border/50 p-8 text-center">
-                        <p className="text-sm text-text-muted">
+                      <div className="card-hover bg-surface rounded-2xl border border-border/50 p-10 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent/25 to-success/15 flex items-center justify-center mx-auto mb-4 shadow-[0_8px_24px_-8px_rgba(88,101,242,0.5)]">
+                          <svg className="w-7 h-7 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                            <rect x="3" y="5" width="18" height="16" rx="2.5" />
+                            <line x1="3" y1="10" x2="21" y2="10" />
+                            <line x1="8" y1="2.5" x2="8" y2="7" />
+                            <line x1="16" y1="2.5" x2="16" y2="7" />
+                            <path d="M8 15h3M14 15h2M8 18h2" />
+                          </svg>
+                        </div>
+                        <p className="text-sm font-medium text-text-normal">
                           {searchQuery.trim() ? "No meetings match your search." : "No meetings yet."}
+                        </p>
+                        <p className="text-xs text-text-muted mt-1">
+                          {searchQuery.trim()
+                            ? "Try a different keyword or clear the date filter."
+                            : "Schedule your first meeting to get started."}
                         </p>
                       </div>
                     );
@@ -709,8 +779,16 @@ export default function Home() {
 
                 <button
                   onClick={() => { setError(""); setShowSchedule(true); }}
-                  className="px-5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-lg transition-all"
+                  className="btn-primary px-5 py-2.5 text-sm font-semibold text-white rounded-xl flex items-center gap-2"
                 >
+                  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <rect x="1.5" y="3" width="13" height="11.5" rx="1.5" />
+                    <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" />
+                    <line x1="5" y1="1" x2="5" y2="4.5" />
+                    <line x1="11" y1="1" x2="11" y2="4.5" />
+                    <line x1="8" y1="9.5" x2="8" y2="13" />
+                    <line x1="6.25" y1="11.25" x2="9.75" y2="11.25" />
+                  </svg>
                   Schedule meeting
                 </button>
               </div>
@@ -724,9 +802,12 @@ export default function Home() {
               </div>
               <div className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
                 {members.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-surface-hover/50 transition-colors">
-                    <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-accent text-xs font-semibold shrink-0">
-                      {m.user.name[0]}
+                  <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-surface-hover/50 transition-colors group">
+                    <div className="relative shrink-0">
+                      <div className="w-7 h-7 rounded-full bg-gradient-to-br from-accent/35 to-success/25 flex items-center justify-center text-accent text-xs font-semibold">
+                        {m.user.name[0]}
+                      </div>
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-success border-2 border-bg-secondary" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-text-normal truncate">{m.user.name}</p>
@@ -750,7 +831,7 @@ export default function Home() {
                       <button
                         onClick={addMember}
                         disabled={!addEmail.trim()}
-                        className="flex-1 px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover disabled:bg-accent/50 text-white rounded-lg transition-all disabled:cursor-not-allowed"
+                        className="btn-primary flex-1 px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Add
                       </button>
@@ -766,8 +847,14 @@ export default function Home() {
                 ) : (
                   <button
                     onClick={() => setShowAddMember(true)}
-                    className="w-full px-4 py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-lg transition-all"
+                    className="btn-primary w-full px-4 py-2 text-sm font-semibold text-white rounded-lg flex items-center justify-center gap-1.5"
                   >
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                      <circle cx="8" cy="5.5" r="2.5" />
+                      <path d="M2.5 14c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5" />
+                      <line x1="12" y1="7.5" x2="14.5" y2="7.5" />
+                      <line x1="13.25" y1="6.25" x2="13.25" y2="8.75" />
+                    </svg>
                     Add member
                   </button>
                 )}
@@ -777,62 +864,89 @@ export default function Home() {
         ) : (
           <div className="flex-1 overflow-y-auto">
             {!user ? (
-              <div className="max-w-md mx-auto mt-[15vh] text-center px-4">
-                <div className="w-14 h-14 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-5">
-                  <span className="text-accent text-xl font-bold">M</span>
+              <div className="max-w-md mx-auto mt-[15vh] text-center px-4 animate-fade-up">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent/30 to-success/15 flex items-center justify-center mx-auto mb-5 shadow-[0_8px_30px_-8px_rgba(88,101,242,0.6)]">
+                  <span className="text-accent text-2xl font-bold">M</span>
                 </div>
-                <h1 className="text-2xl font-bold text-text-normal">Minutes</h1>
+                <h1 className="text-3xl font-bold text-text-normal">Minutes</h1>
                 <p className="text-sm text-text-muted mt-2 leading-relaxed">
                   Meeting minutes management for your organization.
                 </p>
               </div>
             ) : !activeOrgId ? (
-              <div className="max-w-md mx-auto mt-[15vh] text-center px-4">
-                <h1 className="text-2xl font-bold text-text-normal">Welcome, {user.name}</h1>
+              <div className="max-w-md mx-auto mt-[15vh] text-center px-4 animate-fade-up">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent/30 to-success/15 flex items-center justify-center mx-auto mb-5 shadow-[0_8px_30px_-8px_rgba(88,101,242,0.6)]">
+                  <svg className="w-7 h-7 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <rect x="3" y="5" width="18" height="16" rx="2.5" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                    <line x1="8" y1="2.5" x2="8" y2="7" />
+                    <line x1="16" y1="2.5" x2="16" y2="7" />
+                  </svg>
+                </div>
+                <h1 className="text-3xl font-bold text-text-normal">Welcome, {user.name}</h1>
                 <p className="text-sm text-text-muted mt-2 leading-relaxed">
                   Create an organization to start managing meetings and minutes.
                 </p>
                 <button
                   onClick={() => { setError(""); setShowNewOrg(true); }}
-                  className="mt-6 px-6 py-2.5 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-lg transition-all"
+                  className="btn-primary mt-6 px-6 py-2.5 text-sm font-semibold text-white rounded-xl"
                 >
                   Create organization
                 </button>
               </div>
             ) : (
               <div className="max-w-3xl mx-auto px-6 py-8 space-y-5">
-                <div>
-                  <h1 className="text-xl font-bold text-text-normal">{activeOrg?.name}</h1>
+                <div className="animate-fade-up">
+                  <h1 className="text-2xl font-bold text-text-normal flex items-center gap-2.5">
+                    <span className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#6b76ff] to-[#3d49e8] flex items-center justify-center text-white text-base font-bold shadow-[0_4px_14px_-4px_rgba(88,101,242,0.7)]">
+                      {activeOrg?.name[0].toUpperCase()}
+                    </span>
+                    {activeOrg?.name}
+                  </h1>
                   {activeOrg?.description && (
-                    <p className="text-sm text-text-muted mt-1 leading-relaxed">{activeOrg.description}</p>
+                    <p className="text-sm text-text-muted mt-1.5 leading-relaxed">{activeOrg.description}</p>
                   )}
-                  <p className="text-xs text-text-muted mt-1">
-                    {teams.length} team{teams.length !== 1 ? "s" : ""}
+                  <p className="text-xs text-text-muted mt-1.5 flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <rect x="1.5" y="3.5" width="13" height="9" rx="1.5" />
+                      <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" />
+                    </svg>
+                    {teams.length} team{teams.length !== 1 ? "s" : ""} &middot; {members.length} member{members.length !== 1 ? "s" : ""}
                   </p>
                 </div>
 
-                <MembersSection
-                  members={members}
-                  teamId={null}
-                  addEmail={addEmail}
-                  onAddEmailChange={setAddEmail}
-                  onAdd={addMember}
-                  onRemove={removeMember}
-                  error={memberError}
-                />
+                <div className="animate-fade-up" style={{ animationDelay: "60ms" }}>
+                  <MembersSection
+                    members={members}
+                    teamId={null}
+                    addEmail={addEmail}
+                    onAddEmailChange={setAddEmail}
+                    onAdd={addMember}
+                    onRemove={removeMember}
+                    error={memberError}
+                  />
+                </div>
 
-                <div className="bg-surface rounded-xl border border-border/50 p-5">
-                  <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Teams</h3>
+                <div className="animate-fade-up card-hover bg-surface rounded-xl border border-border/50 p-5" style={{ animationDelay: "120ms" }}>
+                  <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                      <path d="M2 8h12M2 4h12M2 12h7" />
+                    </svg>
+                    Teams
+                  </h3>
                   {teams.length > 0 ? (
                     <div className="mt-3 space-y-0.5">
                       {teams.map((t) => (
                         <button
                           key={t.id}
                           onClick={() => setActiveTeamId(t.id)}
-                          className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-text-muted hover:bg-surface-hover/50 hover:text-text-normal transition-colors"
+                          className="group w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-text-muted hover:bg-surface-hover/50 hover:text-text-normal transition-all"
                         >
-                          <span className="text-lg leading-none text-text-muted/60">#</span>
+                          <span className="text-lg leading-none text-text-muted/60 group-hover:text-accent transition-colors">#</span>
                           {t.name}
+                          <svg className="w-3.5 h-3.5 ml-auto -translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 text-accent transition-all" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M3 8h10M9 4l4 4-4 4" />
+                          </svg>
                         </button>
                       ))}
                     </div>
@@ -841,9 +955,10 @@ export default function Home() {
                   )}
                   <button
                     onClick={() => { setError(""); setShowNewTeam(true); }}
-                    className="mt-3 text-sm text-accent hover:text-accent-hover transition-colors"
+                    className="mt-3 text-sm text-accent hover:text-accent-hover transition-colors flex items-center gap-1.5"
                   >
-                    + New team
+                    <span className="w-4 h-4 rounded bg-accent/15 flex items-center justify-center text-xs">+</span>
+                    New team
                   </button>
                 </div>
               </div>
@@ -910,7 +1025,7 @@ export default function Home() {
       )}
       {showSchedule && (
         <ModalOverlay onClose={() => setShowSchedule(false)}>
-          <div className="bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
+          <div className="animate-pop-in bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
             <h2 className="text-[17px] font-semibold text-text-normal mb-5">Schedule meeting</h2>
             <input
               value={meetingTitle}
@@ -974,7 +1089,7 @@ export default function Home() {
               <button
                 onClick={scheduleMeeting}
                 disabled={scheduling || !meetingTitle.trim() || !meetingDate || !meetingTime}
-                className="px-5 py-2 text-sm font-medium bg-accent hover:bg-accent-hover disabled:bg-accent/50 text-white rounded-lg transition-all disabled:cursor-not-allowed"
+                className="btn-primary px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
               >
                 {scheduling ? "Scheduling\u2026" : "Schedule"}
               </button>

@@ -121,29 +121,35 @@ export default function MeetingDetailPage() {
 
   return (
     <div className="h-screen flex flex-col bg-bg-primary">
-      <header className="h-12 shrink-0 flex items-center justify-between px-4 border-b border-border/50 bg-bg-secondary">
+      <header className="frost h-12 shrink-0 flex items-center justify-between px-4 border-b border-border/50">
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => router.push("/")} className="text-sm text-text-muted hover:text-text-normal transition-colors shrink-0">
-            ← Back
+          <button onClick={() => router.push("/")} className="group flex items-center gap-1 text-sm text-text-muted hover:text-text-normal transition-all px-2 py-1 rounded-md hover:bg-surface/40 shrink-0">
+            <svg className="w-3.5 h-3.5 -translate-x-0.5 group-hover:-translate-x-1 transition-transform" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M10 3l-5 5 5 5" />
+            </svg>
+            Back
           </button>
           <span className="text-sm font-semibold truncate">{meeting.title}</span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <span className="text-xs text-text-muted">
+          <span className="text-xs text-text-muted hidden md:block">
             {new Date(meeting.scheduledAt).toLocaleString()}
           </span>
-          <span className="text-xs text-text-muted">
+          <span className="text-xs px-2.5 py-1 rounded-full border border-accent/25 bg-accent/10 text-accent hidden sm:block">
             {template ? template.name : "No template"}
           </span>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${status === "published" ? "bg-success/20 text-success" : "bg-surface text-text-muted"}`}>
+          <span className={`text-xs px-2.5 py-1 rounded-full border ${status === "published" ? "bg-success/15 border-success/25 text-success" : "bg-surface border-border/50 text-text-muted"}`}>
             {status === "published" ? "Published" : "Draft"}
           </span>
           {templateSource && (
             <>
-              <button onClick={showPreview} className="px-4 py-1.5 rounded-md border border-border text-sm">
+              <button onClick={showPreview} className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95">
                 Preview
               </button>
-              <button onClick={exportPdf} className="px-4 py-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover">
+              <button onClick={exportPdf} className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M8 2v8M4.5 7L8 10.5 11.5 7M2.5 13h11" />
+                </svg>
                 Export PDF
               </button>
             </>
@@ -151,7 +157,7 @@ export default function MeetingDetailPage() {
           <button
             onClick={save}
             disabled={saving}
-            className="px-4 py-1.5 rounded-md bg-accent text-white text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? "Saving…" : "Save"}
           </button>
@@ -159,8 +165,8 @@ export default function MeetingDetailPage() {
       </header>
 
       {previewHtml && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-8">
-          <div className="bg-white rounded-lg w-full max-w-4xl h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-8" onClick={() => setPreviewHtml(null)}>
+          <div className="animate-pop-in bg-white rounded-lg w-full max-w-4xl h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
               <span className="text-sm font-semibold text-gray-800">Preview</span>
               <button onClick={() => setPreviewHtml(null)} className="text-sm text-gray-500 hover:text-gray-800">
@@ -179,12 +185,15 @@ export default function MeetingDetailPage() {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-2xl mx-auto py-6 px-4">
           {error && (
-            <div className="mb-4 px-4 py-2.5 rounded-lg bg-danger/15 text-danger text-sm">{error}</div>
+            <div className="animate-fade-up mb-4 px-4 py-2.5 rounded-lg bg-danger/15 border border-danger/25 text-danger text-sm">{error}</div>
           )}
 
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold mb-1">{meeting.title}</h1>
-            {meeting.description && <p className="text-sm text-text-muted">{meeting.description}</p>}
+          <div className="animate-fade-up mb-6">
+            <h1 className="text-2xl font-bold flex items-center gap-2.5">
+              <span className="w-8 h-8 rounded-lg bg-accent/15 border border-accent/20 flex items-center justify-center text-accent text-base">#</span>
+              {meeting.title}
+            </h1>
+            {meeting.description && <p className="text-sm text-text-muted mt-1">{meeting.description}</p>}
           </div>
 
           {!template ? (
@@ -193,8 +202,8 @@ export default function MeetingDetailPage() {
             <div className="text-sm text-text-muted">This template has no fields defined.</div>
           ) : (
             <div className="flex flex-col gap-4">
-              {template.fields.map((field) => (
-                <div key={field.name} className="flex flex-col gap-1">
+              {template.fields.map((field, i) => (
+                <div key={field.name} className="animate-fade-up card-hover bg-surface/50 border border-border/40 rounded-xl p-4 flex flex-col gap-2" style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}>
                   <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
                     {field.label}
                   </label>
