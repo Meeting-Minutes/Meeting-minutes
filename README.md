@@ -68,6 +68,7 @@ Generated migration files (`db/migrations/`) are committed to git — they're th
 | `bun drizzle-kit migrate`  | Apply pending migrations                                         |
 | `bun drizzle-kit studio`   | Open Drizzle Studio to browse the DB                             |
 | `bun run db:check`         | Sanity-check the DB connection (insert/select/delete round trip) |
+| `bun run db:check:clustering` | Verify the clustering indexes exist and the tag-overlap join is index-driven |
 
 ### Day-to-day operations (for a non-specialist admin)
 

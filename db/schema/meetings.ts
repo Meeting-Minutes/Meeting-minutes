@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   foreignKey,
+  index,
 } from "drizzle-orm/pg-core";
 import { templates } from "./templates";
 import { organizations } from "./organizations";
@@ -34,5 +35,7 @@ export const meetings = pgTable(
       columns: [table.continuationOf],
       foreignColumns: [table.id],
     }).onDelete("set null"),
+    // Org-scoped queries (list meetings, clustering job) filter by org.
+    index("meetings_org_idx").on(table.orgId),
   ],
 );
