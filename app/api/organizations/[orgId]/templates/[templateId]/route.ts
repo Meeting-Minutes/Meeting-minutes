@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { templates } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { resolve, join } from "path";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
@@ -27,7 +27,11 @@ export async function GET(
     .where(and(eq(templates.id, templateId), eq(templates.orgId, orgId)))
     .limit(1);
   if (!tmpl) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ ...tmpl, fields: tmpl.fields ?? [] });
+  let templateSource: string | null = null;
+  if (tmpl.texPath) {
+    try { templateSource = readFileSync(resolve(tmpl.texPath), "utf-8"); } catch { /* missing */ }
+  }
+  return NextResponse.json({ ...tmpl, fields: tmpl.fields ?? [], templateSource });
 }
 
 export async function PATCH(

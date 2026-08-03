@@ -24,6 +24,7 @@ type TemplateData = {
   description: string;
   fields: Field[];
   texPath?: string | null;
+  templateSource?: string | null;
 };
 
 export default function TemplateEditorPage({
@@ -42,6 +43,7 @@ export default function TemplateEditorPage({
   const [fields, setFields] = useState<Field[]>([]);
   const [texFile, setTexFile] = useState<File | null>(null);
   const [existingTexPath, setExistingTexPath] = useState<string | null>(null);
+  const [templateSource, setTemplateSource] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [isNew, setIsNew] = useState(false);
@@ -68,6 +70,7 @@ export default function TemplateEditorPage({
           setDescription(t.description ?? "");
           setFields(t.fields ?? []);
           setExistingTexPath(t.texPath ?? null);
+          setTemplateSource(t.templateSource ?? null);
         })
         .catch(() => setError("Failed to load template"));
     });
@@ -320,6 +323,14 @@ export default function TemplateEditorPage({
               <code>{`{{#if (has list)}}`}</code>.
             </p>
           </div>
+
+          {/* --- template source preview --- */}
+          {templateSource && (
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">Template Source</label>
+              <pre className="bg-bg-tertiary border border-border rounded p-3 text-xs font-mono text-text-muted overflow-auto max-h-64 whitespace-pre-wrap">{templateSource}</pre>
+            </div>
+          )}
         </div>
       </main>
     </div>
