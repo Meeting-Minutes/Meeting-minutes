@@ -41,6 +41,20 @@ export async function POST(req: Request) {
 
   const slug = name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 
+  const adminPerms = await db
+    .select({ id: permissionsTable.id })
+    .from(permissionsTable)
+    .where(inArray(permissionsTable.key, ADMIN_PERMISSION_KEYS));
+
+  if (adminPerms.length !== ADMIN_PERMISSION_KEYS.length) {
+    // A missing permission key means the seed catalog isn't applied — failing
+    // here beats silently creating a founder role with an incomplete set.
+    return NextResponse.json(
+      { error: "Server misconfigured: permission catalog incomplete" },
+      { status: 500 },
+    );
+  }
+
   const [org] = await db
     .insert(organizations)
     .values({ name, description: description || null, slug })
@@ -51,16 +65,9 @@ export async function POST(req: Request) {
     .values({ id: crypto.randomUUID(), name: "Admin", orgId: org.id })
     .returning();
 
-  const adminPerms = await db
-    .select({ id: permissionsTable.id })
-    .from(permissionsTable)
-    .where(inArray(permissionsTable.key, ADMIN_PERMISSION_KEYS));
-
-  if (adminPerms.length > 0) {
-    await db.insert(rolePermissions).values(
-      adminPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
-    );
-  }
+  await db.insert(rolePermissions).values(
+    adminPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
+  );
 
   await db.insert(memberships).values({
     userId: user.id,

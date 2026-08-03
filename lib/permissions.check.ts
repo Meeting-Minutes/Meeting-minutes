@@ -145,15 +145,13 @@ async function main() {
     (await db.select({ key: permissions.key }).from(permissions)).map((r) => r.key),
   );
   for (const key of ADMIN_PERMISSION_KEYS) {
-    console.assert(
-      catalogKeys.has(key),
-      `Test 6 FAIL: seed catalog is missing an admin permission: ${key}`,
-    );
+    if (!catalogKeys.has(key)) {
+      throw new Error(`Test 6 FAIL: seed catalog is missing an admin permission: ${key}`);
+    }
   }
-  console.assert(
-    !ADMIN_PERMISSION_KEYS.includes("superuser"),
-    "Test 6b FAIL: admin bootstrap must not grant superuser (keeps admin splittable)",
-  );
+  if (ADMIN_PERMISSION_KEYS.includes("superuser")) {
+    throw new Error("Test 6b FAIL: admin bootstrap must not grant superuser (keeps admin splittable)");
+  }
   console.log("Test 6 OK: admin permission set is complete and superuser-free");
 
   // --- Cleanup ---
