@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 700px; margin: 0 auto; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 8px; }
+  .meta { color: #666; font-size: 14px; margin-bottom: 24px; }
+  h2 { font-size: 16px; margin-top: 20px; text-transform: uppercase; letter-spacing: 1px; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .update { margin-bottom: 16px; padding: 10px; background: #f9f9f9; border-radius: 4px; }
+  .update strong { display: block; font-size: 15px; margin-bottom: 4px; }
+  .update p { margin: 2px 0; font-size: 13px; }
+  .label { color: #888; }
+  ul { font-size: 14px; margin: 4px 0 16px; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<h1>{{title}} &mdash; {{date}}</h1>
+
+<h2>Team Updates</h2>
+{{#each updates}}
+<div class="update">
+  <strong>{{name}}</strong>
+  <p><span class="label">Yesterday:</span> {{yesterday}}</p>
+  <p><span class="label">Today:</span> {{today}}</p>
+  <p><span class="label">Blockers:</span> {{blockers}}</p>
+</div>
+{{/each}}
+
+<h2>Action Items</h2>
+<ul>
+  {{#each actions}}
+  <li><strong>{{item}}</strong> &mdash; {{owner}}</li>
+  {{/each}}
+</ul>
+
+</body>
+</html>

@@ -41,8 +41,8 @@ organizations
   └─ meetings (belongs to org, optionally a team; optional template_id)
        └─ meeting_tags → tags (org-scoped)
        └─ attendance (user OR external name/email)
-       └─ minutes (one per meeting, shares meetings.id, references template)
-            └─ minutes_sections (content per template_section)
+        └─ minutes (one per meeting, shares meetings.id, references template)
+             └─ minutes_sections (owned by minute — type, title, config, content per section)
             └─ exports (generated files)
   └─ clusters
        └─ cluster_meetings → meetings
@@ -188,13 +188,18 @@ The frontend provides a drag-and-drop template builder that creates and reorders
 | updated_at | timestamp | |
 | published_at | timestamp, nullable | |
 
-**`minutes_sections`** — the per-section content for a minutes record; this is what replaced the old single `minutes.content` JSON blob
+**`minutes_sections`** — each minute owns its own ordered list of sections; the template defines the *initial* structure, then the minute can deviate (add/remove/reorder/rename sections).
 | column | type | notes |
 |---|---|---|
+| id | uuid PK | |
 | minutes_id | uuid FK → minutes, `cascade` on delete | |
-| section_id | uuid FK → template_sections, `cascade` on delete | |
-| content | jsonb, not null | shape depends on the section's `type` — a `rich_text` section's content is a doc blob, a `table` section's content is rows, etc. |
-| — | | composite PK (minutes_id, section_id) — one content row per section per minutes record |
+| order | integer, not null | display order within the minute |
+| type | text, not null | component type (`meeting_info`, `attendance`, `agenda`, `rich_text`, `table`, `signature`) |
+| title | text, not null | section heading |
+| config | jsonb, nullable | section configuration copied from the template at apply time (e.g. `{ columns: […] }` for tables, `{ fields: […] }` for meeting_info) |
+| content | jsonb, not null | validated per-section content — shape depends on `type` |
+
+When a template is applied, its `template_sections` are materialized into `minutes_sections` rows with empty content and per-type defaults derived from `config`. Sections whose (type, title) matches an existing minute section preserve their content. After application, the minute's sections are independent — adding, removing, reordering, or retitling sections does not affect the template.
 
 **`tags`** / **`meeting_tags`** — org-scoped tag catalog + join table, standard many-to-many.
 
@@ -276,7 +281,7 @@ If `X` is in that result set, allow. This single query is the whole authorizatio
 - **A role belongs to one org.** Two different orgs can both have a role called "Secretary" with completely different permission sets — they're different rows, no shared identity beyond the name string.
 - **A role is optionally scoped to one team.** `roles.team_id IS NULL` = org-wide role; `roles.team_id = <team>` = sub-committee role that exists only in that team's context (e.g. a "Lead" or "Coordinator" per sub-committee, each independently named and permissioned). Managing a team's scoped roles requires `manage_team_roles` on that team (or `manage_roles` org-wide) — this is what lets sub-committees operate semi-independently from the org role set.
 - **Assignment is via `memberships`**, scoped optionally to a team. This is also how "admin currently == the top role, separable later" works: initially you might have one very broad role assigned org-wide, and later split it into two roles with narrower permission sets — no schema change required, just new rows in `roles`/`role_permissions` and updated `memberships`.
-- **Founding an org** (open to any user — an org is like a server) auto-creates a single bootstrap **Admin** role carrying the `ADMIN_PERMISSION_KEYS` set and grants the founder that role as an org-wide membership. Those keys exclude `superuser` on purpose: the founder stays a normal, editable role rather than an implicitly god-tier one, so other roles can be carved out of it over time without restructuring.
+- **Founding an org** (open to any user — an org is like a server) auto-creates a single bootstrap **Admin** role carrying **every permission in the catalog except `superuser`** and grants the founder that role as an org-wide membership. `superuser` is excluded on purpose: the founder stays a normal, editable role rather than an implicitly god-tier one, so other roles can be carved out of it over time without restructuring. The grant is computed from the catalog at creation time (not a static list), so a newly added permission automatically reaches new orgs' admins.
 
 ---
 
@@ -309,9 +314,8 @@ A template with its sections looks like (rows shown as JSON for readability, not
 ```
 
 - `type` maps to a small, fixed set of renderable component types the frontend knows how to draw and edit: `meeting_info`, `attendance`, `agenda`, `rich_text`, `table`, `signature`. New _templates_ are just new arrangements/configs of these — no code change. A genuinely new `type` is a code change, but that's rare compared to arranging existing types into new templates.
-- **Content lives per-section**, not as one big blob: each `minutes_sections` row is keyed by `(minutes_id, section_id)` and holds that one section's `content` jsonb. Rendering a minutes record is "walk this minutes' template's `template_sections` in `order`, join each to its `minutes_sections` row by `section_id`, render `content` per that section's `type`" — same code path for screen, PDF, and search-index text. This also makes partial-save and per-section audit/diffing cheap: editing the agenda section touches one row, not the whole document.
-- **No versioning** — see the `ponytail:` note in §2 under `template_sections`. A meeting's minutes keep their `template_id` even if the template is edited later (adding/removing/reordering sections), so an edited template can, in principle, desync from minutes that already have `minutes_sections` content for a since-removed `section_id`. This is accepted for now (see §8) on the same YAGNI logic as the rest of §2 — admins are expected to duplicate a template before making a breaking change to it, not edit shared templates out from under live minutes.
-- **Freeform minutes** (no template, `minutes.template_id` null): there's no `template_sections` row to key `minutes_sections.section_id` off of, since that column is part of the composite primary key and can't be null. This is an open gap, not a solved case — see §8.
+- **Content lives per-section**, not as one big blob: each `minutes_sections` row holds its own `type`, `title`, `config`, and `content` jsonb. Rendering a minutes record walks `minutes_sections` in `order`, validates each row's content against its type + config, and renders per that section's `type` — same code path for screen, PDF, and search-index text. Each section is an independent row, so adding/removing/reordering a section touches only that row, not the whole document.
+- **Templates are a starting point, not a cage**: a minute's sections are initialized from a template's `template_sections` when the template is first applied (or when switched mid-edit). After that, the minute's sections are independent — the secretary can add, remove, reorder, or retitle sections freely. Switching templates mid-edit matches existing sections by (type, title) to preserve content wherever possible.
 
 ---
 
@@ -348,7 +352,7 @@ The system is run by org staff, not dedicated IT. Backups and updates are delibe
 
 Carried over / sharpened from the README's open questions, now that they're schema-shaped decisions:
 
-- **Freeform minutes storage** (§6) — `minutes_sections.section_id` is part of a composite PK, so it can't be null, which means a template-less minutes record currently has nowhere to put content. Options: (a) a small set of implicit "virtual" template_sections seeded per org for freeform use, (b) a nullable `minutes.content` column that's only used in the freeform case, sitting alongside `minutes_sections` for the templated case, or (c) require every org to have a default minimal template and drop "freeform" as a concept. Needs a decision before freeform meetings are implemented.
+- **Freeform minutes** — resolved. `minutes_sections` no longer has an FK to `template_sections`; each minute owns its own section rows. A meeting without a template simply starts with zero sections; the secretary adds them one by one. No special storage path needed.
 - **`meeting_overrides`** (§5) — confirm this is the right shape vs. just allowing `memberships.team_id` to reference a meeting too (would require `memberships` to know about two different parent types — messier; the separate-table approach above is recommended).
 - **External members with accounts** — if "yes" (per README open question), they get a normal `users` row + `memberships` row with a deliberately narrow role. If "no," `attendance.external_name/email` (already in the schema above) is sufficient and no `users` row is created.
 - **Permission catalog growth** — is the fixed `permissions` table enough, or will custom-permission-per-org ever be needed? Recommend staying fixed until an actual use case demands otherwise (YAGNI).

@@ -1,4 +1,4 @@
-import { pgTable, uuid, pgEnum, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, pgEnum, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { meetings } from "./meetings";
 import { templates } from "./templates";
 
@@ -10,6 +10,7 @@ export const minutes = pgTable("minutes", {
     .references(() => meetings.id),
   templateId: uuid("template_id").references(() => templates.id),
   status: minute_status("status").default("draft"),
+  content: jsonb("content").notNull().default({}),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   publishedAt: timestamp("published_at"),

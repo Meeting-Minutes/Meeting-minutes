@@ -18,8 +18,14 @@
     "update": "bash scripts/update.sh"
   },
   "dependencies": {
+    "@tiptap/extension-link": "^3.29.2",
+    "@tiptap/pm": "^3.29.2",
+    "@tiptap/react": "^3.29.2",
+    "@tiptap/starter-kit": "^3.29.2",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
+    "handlebars": "^4.7.9",
+    "html2pdf.js": "^0.14.0",
     "jose": "^6.2.3",
     "next": "16.2.10",
     "postgres": "^3.4.9",
