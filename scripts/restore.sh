@@ -12,9 +12,9 @@ if [[ -z "$file" || ! -f "$file" ]]; then
   exit 1
 fi
 
-# docker compose exec with -T cannot carry stdin from a redirected file reliably on
-# all platforms, so pipe the SQL into psql inside the container.
-docker compose exec -T db psql -U postgres -d minutes_dev < "$file"
+# ON_ERROR_STOP makes psql fail on the first SQL error instead of continuing
+# (and then "restoring" over a partially-loaded DB).
+docker compose exec -T db psql -U postgres -d minutes_dev --set ON_ERROR_STOP=1 < "$file"
 
 bun drizzle-kit migrate
 
