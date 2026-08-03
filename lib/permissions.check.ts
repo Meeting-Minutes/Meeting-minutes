@@ -16,6 +16,7 @@ import {
   getPermissionKeys,
   hasPermission,
   resolveMeetingAccess,
+  ADMIN_PERMISSION_KEYS,
 } from "./permissions";
 
 async function main() {
@@ -138,6 +139,22 @@ async function main() {
     "Test 5d FAIL: meeting permission must not cross organizations",
   );
   console.log("Test 5 OK: team and organization meeting isolation works");
+
+  // --- Test 6: bootstrap admin permission set ---
+  const catalogKeys = new Set(
+    (await db.select({ key: permissions.key }).from(permissions)).map((r) => r.key),
+  );
+  for (const key of ADMIN_PERMISSION_KEYS) {
+    console.assert(
+      catalogKeys.has(key),
+      `Test 6 FAIL: seed catalog is missing an admin permission: ${key}`,
+    );
+  }
+  console.assert(
+    !ADMIN_PERMISSION_KEYS.includes("superuser"),
+    "Test 6b FAIL: admin bootstrap must not grant superuser (keeps admin splittable)",
+  );
+  console.log("Test 6 OK: admin permission set is complete and superuser-free");
 
   // --- Cleanup ---
   await db.delete(meetingOverrides).where(

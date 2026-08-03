@@ -7,8 +7,9 @@ import {
   permissions as permissionsTable,
   rolePermissions,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { ADMIN_PERMISSION_KEYS } from "@/lib/permissions";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -50,13 +51,14 @@ export async function POST(req: Request) {
     .values({ id: crypto.randomUUID(), name: "Admin", orgId: org.id })
     .returning();
 
-  const allPerms = await db
+  const adminPerms = await db
     .select({ id: permissionsTable.id })
-    .from(permissionsTable);
+    .from(permissionsTable)
+    .where(inArray(permissionsTable.key, ADMIN_PERMISSION_KEYS));
 
-  if (allPerms.length > 0) {
+  if (adminPerms.length > 0) {
     await db.insert(rolePermissions).values(
-      allPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
+      adminPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
     );
   }
 

@@ -276,6 +276,7 @@ If `X` is in that result set, allow. This single query is the whole authorizatio
 - **A role belongs to one org.** Two different orgs can both have a role called "Secretary" with completely different permission sets — they're different rows, no shared identity beyond the name string.
 - **A role is optionally scoped to one team.** `roles.team_id IS NULL` = org-wide role; `roles.team_id = <team>` = sub-committee role that exists only in that team's context (e.g. a "Lead" or "Coordinator" per sub-committee, each independently named and permissioned). Managing a team's scoped roles requires `manage_team_roles` on that team (or `manage_roles` org-wide) — this is what lets sub-committees operate semi-independently from the org role set.
 - **Assignment is via `memberships`**, scoped optionally to a team. This is also how "admin currently == the top role, separable later" works: initially you might have one very broad role assigned org-wide, and later split it into two roles with narrower permission sets — no schema change required, just new rows in `roles`/`role_permissions` and updated `memberships`.
+- **Founding an org** (open to any user — an org is like a server) auto-creates a single bootstrap **Admin** role carrying the `ADMIN_PERMISSION_KEYS` set and grants the founder that role as an org-wide membership. Those keys exclude `superuser` on purpose: the founder stays a normal, editable role rather than an implicitly god-tier one, so other roles can be carved out of it over time without restructuring.
 
 ---
 
