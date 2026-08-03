@@ -95,8 +95,11 @@ A user row is **global** — one person, one row, regardless of how many orgs th
 |---|---|---|
 | id | uuid PK | |
 | org_id | uuid FK → organizations | a role belongs to exactly one org |
+| team_id | uuid FK → teams, **nullable** | null = org-wide role; set = role is scoped to that specific sub-committee |
 | name | text | e.g. "Secretary", "Coordinator" — cosmetic, org-chosen |
 | created_at | timestamp | |
+
+A role's scope (org-wide vs. team-scoped) is part of its identity: `team_id IS NULL` means the role applies everywhere in the org; `team_id = <team>` means the role only exists in that sub-committee's context. The same `role_permissions` table serves both scopes — permissions attach to the role regardless of scope.
 
 **`role_permissions`** _(join table — role has permissions)_
 | column | type | notes |
@@ -243,6 +246,13 @@ This is entirely handled by `memberships` — nothing else needs to change to su
 - their org-wide membership (`team_id IS NULL`), if any — applies everywhere in that org, and
 - their team-specific membership for that exact team, if any.
 
+A role carried by a membership must be scope-compatible (enforced app-level, `lib/permissions.ts` `isRoleScopeValid`):
+
+| Membership `team_id` | Allowed role `team_id` |
+|---|---|
+| `NULL` (org-wide) | `NULL` (org-wide role) only — a team-scoped role can't be promoted org-wide |
+| `<team>` | `NULL` (org-wide role) or that same `<team>` — never a sibling team's role |
+
 **Resolving "can user U do action X on team T in org O"**:
 
 ```sql
@@ -264,6 +274,7 @@ If `X` is in that result set, allow. This single query is the whole authorizatio
 - **Permissions are fixed** (a seeded catalog table) — the _behaviors_ the system knows how to gate are finite and defined in code (`approve_minutes`, `manage_roles`, etc.).
 - **Roles are dynamic per org** — an org's admin creates roles and picks which permissions each role has. Nothing about role names or role count is hardcoded.
 - **A role belongs to one org.** Two different orgs can both have a role called "Secretary" with completely different permission sets — they're different rows, no shared identity beyond the name string.
+- **A role is optionally scoped to one team.** `roles.team_id IS NULL` = org-wide role; `roles.team_id = <team>` = sub-committee role that exists only in that team's context (e.g. a "Lead" or "Coordinator" per sub-committee, each independently named and permissioned). Managing a team's scoped roles requires `manage_team_roles` on that team (or `manage_roles` org-wide) — this is what lets sub-committees operate semi-independently from the org role set.
 - **Assignment is via `memberships`**, scoped optionally to a team. This is also how "admin currently == the top role, separable later" works: initially you might have one very broad role assigned org-wide, and later split it into two roles with narrower permission sets — no schema change required, just new rows in `roles`/`role_permissions` and updated `memberships`.
 
 ---

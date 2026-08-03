@@ -1,8 +1,27 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { rolePermissions, permissions } from "@/db/schema";
+import { roles, rolePermissions, permissions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { canManageOrgRoles, canManageTeamRoles } from "@/lib/permissions";
+
+async function assertCanManageRole(userId: string, orgId: string, roleId: string) {
+  const [role] = await db
+    .select({ id: roles.id, orgId: roles.orgId, teamId: roles.teamId })
+    .from(roles)
+    .where(and(eq(roles.id, roleId), eq(roles.orgId, orgId)))
+    .limit(1);
+
+  if (!role) return { error: "Not found" as const, status: 404 as const };
+  if (role.teamId !== null) {
+    const ok = await canManageTeamRoles(userId, orgId, role.teamId);
+    if (!ok) return { error: "Forbidden" as const, status: 403 as const };
+  } else {
+    const ok = await canManageOrgRoles(userId, orgId);
+    if (!ok) return { error: "Forbidden" as const, status: 403 as const };
+  }
+  return null;
+}
 
 export async function GET(
   _req: Request,
@@ -11,7 +30,10 @@ export async function GET(
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { roleId } = await params;
+  const { orgId, roleId } = await params;
+  const denied = await assertCanManageRole(user.id, orgId, roleId);
+  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
+
   const rows = await db
     .select({
       id: permissions.id,
@@ -33,7 +55,10 @@ export async function POST(
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { roleId } = await params;
+  const { orgId, roleId } = await params;
+  const denied = await assertCanManageRole(user.id, orgId, roleId);
+  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
+
   const { permissionId } = await req.json();
 
   if (!permissionId) {
@@ -60,7 +85,10 @@ export async function DELETE(
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { roleId } = await params;
+  const { orgId, roleId } = await params;
+  const denied = await assertCanManageRole(user.id, orgId, roleId);
+  if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
+
   const { permissionId } = await req.json();
 
   if (!permissionId) {
