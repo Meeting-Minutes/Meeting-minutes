@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 
 const FIELD_TYPES = [
   { value: "text", label: "Text" },
@@ -29,9 +29,10 @@ type TemplateData = {
 export default function TemplateEditorPage({
   searchParams,
 }: {
-  searchParams: Promise<{ org?: string; templateId?: string }>;
+  searchParams: Promise<{ org?: string }>;
 }) {
   const router = useRouter();
+  const routeParams = useParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [orgId, setOrgId] = useState("");
@@ -48,7 +49,9 @@ export default function TemplateEditorPage({
   useEffect(() => {
     searchParams.then((sp) => {
       const oid = sp.org ?? "";
-      const tid = sp.templateId ?? "";
+      const tid = Array.isArray(routeParams.templateId)
+        ? routeParams.templateId[0]
+        : (routeParams.templateId ?? "");
       setOrgId(oid);
       setTemplateId(tid);
       if (!oid) return;
