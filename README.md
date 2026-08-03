@@ -79,7 +79,7 @@ Backups and updates are two commands, no Postgres knowledge required:
 | Restore a backup     | `bun run db:restore <file>`      | Loads the file, then re-runs migrations.                              |
 | Update the install   | `bun run update`                 | Pulls code, installs deps, applies new migrations. Safe to re-run.    |
 
-Everything runs inside the `db` Docker container, so no `pg_dump`/`psql` need to be installed on the host. To automate backups, put `bun run db:backup` on a cron/task-scheduler job.
+Everything that talks to the database runs inside the `db` Docker container, so no `pg_dump`/`psql` need to be installed on the host. To automate backups, put `bun run db:backup` on a cron/task-scheduler job.
 
 ## Table of Contents
 
