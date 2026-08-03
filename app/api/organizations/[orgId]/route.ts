@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
+import { canAccessOrganization, hasPermission } from "@/lib/permissions";
 
 export async function GET(
   _req: Request,
@@ -12,6 +13,10 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
+  if (!(await canAccessOrganization(user.id, orgId))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const [org] = await db
     .select()
     .from(organizations)
@@ -30,6 +35,10 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
+  if (!(await hasPermission({ userId: user.id, orgId }, "manage_org"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { name, description } = await req.json();
 
   if (!name || typeof name !== "string") {
@@ -55,6 +64,10 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
+  if (!(await hasPermission({ userId: user.id, orgId }, "manage_org"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   await db.delete(organizations).where(eq(organizations.id, orgId));
   return NextResponse.json({ success: true });
 }

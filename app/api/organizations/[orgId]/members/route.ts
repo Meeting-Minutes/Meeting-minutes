@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { memberships, users, roles } from "@/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { isRoleScopeValid } from "@/lib/permissions";
 
@@ -37,6 +35,11 @@ export async function GET(
   const teamId = url.searchParams.get("teamId");
 
   if (teamId) {
+    const teamAccess = await resolveTeamAccess(user.id, teamId);
+    if (teamAccess?.orgId !== orgId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
     const rows = await db
       .select({
         id: memberships.id,
@@ -52,6 +55,9 @@ export async function GET(
     return NextResponse.json(rows);
   }
 
+  const access = await resolveOrganizationAccess(user.id, orgId);
+  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
   const rows = await db
     .selectDistinctOn([memberships.userId], {
       id: memberships.id,
@@ -62,7 +68,14 @@ export async function GET(
     })
     .from(memberships)
     .innerJoin(users, eq(memberships.userId, users.id))
-    .where(eq(memberships.organizationId, orgId))
+    .where(
+      access.orgWide
+        ? eq(memberships.organizationId, orgId)
+        : and(
+          eq(memberships.organizationId, orgId),
+          inArray(memberships.teamId, access.teamIds),
+        ),
+    )
     .orderBy(memberships.userId);
 
   return NextResponse.json(rows);
@@ -78,44 +91,58 @@ export async function POST(
   const { orgId } = await params;
   const { email, teamId, roleId } = await req.json();
 
-  if (!email || typeof email !== "string") {
-    return NextResponse.json({ error: "email is required" }, { status: 400 });
+  const teamAccess = await resolveTeamAccess(currentUser.id, teamId);
+  if (teamAccess?.orgId !== orgId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+}
+if (
+  !(await hasPermission(
+    { userId: currentUser.id, orgId, ...(teamId ? { teamId } : {}) },
+    "manage_members",
+  ))
+) {
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+}
 
-  const [targetUser] = await db
-    .select()
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
+if (!email || typeof email !== "string") {
+  return NextResponse.json({ error: "email is required" }, { status: 400 });
+}
 
-  if (!targetUser) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
+const [targetUser] = await db
+  .select()
+  .from(users)
+  .where(eq(users.email, email))
+  .limit(1);
 
-  const role = await validateRole(orgId, teamId, roleId);
-  if ("error" in role) {
-    return NextResponse.json({ error: role.error }, { status: role.status });
-  }
+if (!targetUser) {
+  return NextResponse.json({ error: "User not found" }, { status: 404 });
+}
 
-  const [membership] = await db
-    .insert(memberships)
-    .values({
-      userId: targetUser.id,
-      organizationId: orgId,
-      teamId: teamId || null,
-      roleId: role.roleId,
-    })
-    .onConflictDoNothing()
-    .returning();
+const role = await validateRole(orgId, teamId, roleId);
+if ("error" in role) {
+  return NextResponse.json({ error: role.error }, { status: role.status });
+}
 
-  if (!membership) {
-    return NextResponse.json(
-      { error: "User is already a member" },
-      { status: 409 },
-    );
-  }
+const [membership] = await db
+  .insert(memberships)
+  .values({
+    userId: targetUser.id,
+    organizationId: orgId,
+    teamId: teamId || null,
+    roleId: role.roleId,
+  })
+  .onConflictDoNothing()
+  .returning();
 
-  return NextResponse.json(membership, { status: 201 });
+if (!membership) {
+  return NextResponse.json(
+    { error: "User is already a member" },
+    { status: 409 },
+  );
+}
+
+return NextResponse.json(membership, { status: 201 });
 }
 
 export async function PATCH(
@@ -166,6 +193,21 @@ export async function DELETE(
 
   const { orgId } = await params;
   const { userId, teamId } = await req.json();
+
+  if (teamId) {
+    const teamAccess = await resolveTeamAccess(currentUser.id, teamId);
+    if (teamAccess?.orgId !== orgId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+  }
+  if (
+    !(await hasPermission(
+      { userId: currentUser.id, orgId, ...(teamId ? { teamId } : {}) },
+      "manage_members",
+    ))
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   if (!userId) {
     return NextResponse.json({ error: "userId is required" }, { status: 400 });
