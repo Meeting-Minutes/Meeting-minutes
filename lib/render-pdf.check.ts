@@ -39,4 +39,14 @@ ok(out.includes("<li>Budget $100k</li>"), "table loop produces items");
 ok(out.includes("<li>Hiring &lt; 5 devs</li>"), "escapes HTML in table row");
 ok(out.includes("Alice #1"), "plain text passes through unchanged");
 
+// Devanagari numbering helpers
+ok(renderTemplate("<p>{{devnagari (add 4 1)}}</p>", {}) === "<p>५</p>", "devnagari converts 5 → ५");
+ok(renderTemplate("<p>{{devnagari 10}}</p>", {}) === "<p>१०</p>", "devnagari handles multi-digit numbers");
+ok(
+  renderTemplate("{{#each items}}<li>{{devnagari (add @index 1)}}</li>{{/each}}", {
+    items: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}],
+  }) === "<li>१</li><li>२</li><li>३</li><li>४</li><li>५</li><li>६</li><li>७</li><li>८</li><li>९</li><li>१०</li>",
+  "devnagari numbering १..१० across a table",
+);
+
 console.log(`ok — ${n} checks passed`);
