@@ -1,6 +1,8 @@
 name: GitHub → Jira Sync
 
 on:
+  workflow_dispatch:
+
   issues:
     types:
       - opened
