@@ -20,9 +20,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-bg-tertiary">
-      <div className="bg-bg-primary w-full max-w-sm p-8 rounded-lg shadow-xl">
+    <div className="flex items-center justify-center min-h-screen bg-bg-tertiary px-4">
+      <div className="animate-pop-in bg-bg-primary w-full max-w-sm p-8 rounded-2xl shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)] border border-border/40">
         <div className="text-center mb-6">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent/30 to-success/15 flex items-center justify-center mx-auto mb-4 shadow-[0_8px_24px_-8px_rgba(88,101,242,0.6)]">
+            <span className="text-accent text-lg font-bold">M</span>
+          </div>
           <h1 className="text-2xl font-semibold text-text-normal m-0">Welcome back</h1>
           <p className="text-text-muted text-sm mt-1">Sign in to your account</p>
         </div>
@@ -39,7 +42,7 @@ export default function LoginPage() {
               type="email"
               placeholder="you@pcampus.edu.np"
               required
-              className="px-3 py-2 text-text-normal placeholder:text-text-muted/50 bg-bg-input border border-border rounded focus:border-accent focus:outline-none"
+              className="px-3.5 py-2.5 text-text-normal placeholder:text-text-muted/50 bg-bg-input border border-border rounded-lg focus:border-accent focus:shadow-[0_0_0_3px_rgba(88,101,242,0.15)] transition-all focus:outline-none"
             />
           </div>
 
@@ -54,18 +57,18 @@ export default function LoginPage() {
               type="password"
               placeholder="Your password"
               required
-              className="px-3 py-2 text-text-normal placeholder:text-text-muted/50 bg-bg-input border border-border rounded focus:border-accent focus:outline-none"
+              className="px-3.5 py-2.5 text-text-normal placeholder:text-text-muted/50 bg-bg-input border border-border rounded-lg focus:border-accent focus:shadow-[0_0_0_3px_rgba(88,101,242,0.15)] transition-all focus:outline-none"
             />
           </div>
 
           {state?.error && (
-            <p className="text-danger text-sm m-0">{state.error}</p>
+            <p className="animate-fade-up text-danger text-sm m-0">{state.error}</p>
           )}
 
           <button
             disabled={pending}
             type="submit"
-            className="w-full bg-accent hover:bg-accent-hover disabled:opacity-60 text-white font-medium py-2.5 px-4 rounded transition-colors"
+            className="btn-primary w-full text-white font-semibold py-2.5 px-4 rounded-lg disabled:opacity-60"
           >
             {pending ? "Signing in…" : "Sign In"}
           </button>
@@ -84,7 +87,7 @@ export default function LoginPage() {
                 key={a.email}
                 type="button"
                 onClick={() => fillDemo(a.email)}
-                className="flex justify-between items-center text-left text-xs px-2 py-1.5 rounded hover:bg-bg-secondary transition-colors group"
+                className="group flex justify-between items-center text-left text-xs px-2.5 py-2 rounded-lg hover:bg-bg-secondary hover:border-l-2 hover:border-l-accent border-l-2 border-l-transparent transition-all active:scale-[0.98]"
               >
                 <code className="text-[11px] text-accent group-hover:text-accent-hover">{a.email}</code>
                 <span className="text-text-muted">{a.label}</span>

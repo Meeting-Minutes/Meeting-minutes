@@ -48,6 +48,23 @@ const HOA_FIELDS = [
   { name: "signers", label: "Signatures", type: "table", config: { columns: [{ key: "name", label: "Name" }] } },
 ];
 
+// ─── PCampus minute (Nepali committee minutes) template ────────────────────
+
+const PCAMPUS_FIELDS = [
+  { name: "title", label: "बैठकको शीर्षक", type: "text" },
+  { name: "date_np", label: "मिति (नेपाली)", type: "text" },
+  { name: "date_ad", label: "मिति (अंग्रेजी)", type: "date" },
+  { name: "day", label: "दिन", type: "text" },
+  { name: "time", label: "समय", type: "text" },
+  { name: "location", label: "स्थान", type: "text" },
+  { name: "committee", label: "समितिको विवरण", type: "textarea" },
+  { name: "committee_name", label: "समितिको नाम", type: "text" },
+  { name: "chair", label: "संयोजकको नाम", type: "text" },
+  { name: "attendees", label: "उपस्थिति", type: "table", config: { columns: [{ key: "name", label: "नाम" }, { key: "designation", label: "पद/विभाग" }, { key: "post", label: "समिति पद" }] } },
+  { name: "proposals", label: "प्रस्तावहरु", type: "table", config: { columns: [{ key: "item", label: "प्रस्ताव" }] } },
+  { name: "decisions", label: "निर्णयहरू", type: "table", config: { columns: [{ key: "item", label: "निर्णय" }] } },
+];
+
 // ─── helpers ───────────────────────────────────────────────────────────────
 
 async function getUserId(email: string) {
@@ -143,6 +160,10 @@ export async function seedDemo() {
     "Daily Standup", "Quick daily update with team updates and action items",
     STANDUP_FIELDS, "db/seed/templates/daily-standup.hbs");
 
+  const pcampusMinuteId = await createTemplate(pcampusId, adminId,
+    "PCampus Minute", "नेपाली क्याम्पस समिति बैठकको कार्यविवरण — उपस्थिति, प्रस्ताव, निर्णय र हस्ताक्षर",
+    PCAMPUS_FIELDS, "db/seed/templates/pcampus-minute.hbs");
+
   // ── meetings with content ───────────────────────────────────────────────
 
   await createMeeting(pcampusId, teamId, committeeId, "Q3 Budget Review", "2026-07-20T10:00:00Z", adminId, {
@@ -196,6 +217,40 @@ export async function seedDemo() {
   });
 
   await createMeeting(pcampusId, teamId, null, "Coffee Chat", "2026-08-03T15:00:00Z", adminId, {});
+
+  await createMeeting(pcampusId, teamId, pcampusMinuteId,
+    "अनुसन्धान परियोजना कार्यान्वयन समितिको बैठक", "2026-03-18T02:45:00Z", adminId, {
+    title: "अनुसन्धान परियोजना कार्यान्वयन समितिको बैठक",
+    date_np: "२०८२/१२/०४",
+    date_ad: "2026-03-18",
+    day: "बुधबार",
+    time: "राति ०२:४५ बजे",
+    location: "क्याम्पस कार्यालय",
+    committee: "University Grants Commission (UGC) द्वारा स्वीकृत अनुसन्धान परियोजना सञ्चालन गर्न का लागि गठित अनुसन्धान परियोजना कार्यान्वयन समिति",
+    committee_name: "अनुसन्धान परियोजना कार्यान्वयन समिति",
+    chair: "प्रा. विजय गुरुङ",
+    attendees: [
+      { name: "प्रा. विजय गुरुङ", designation: "EEC Chief", post: "संयोजक" },
+      { name: "प्रा. हरि बहादुर", designation: "Campus Chief", post: "सचिव" },
+      { name: "डा. गिता ओली", designation: "IOM Delegate", post: "सह सचिव" },
+      { name: "डा. विकाश लामा", designation: "IMO Chief", post: "सचिव" },
+      { name: "प्रा. सुनिता महार्जन", designation: "MSc Environmental Science", post: "सदस्य" },
+      { name: "डा. कमल पाण्डे", designation: "PhD Civil Engineering", post: "आमन्त्रित" },
+      { name: "प्रा. नवि तामाङ", designation: "MSc Computer Science", post: "आमन्त्रित" },
+    ],
+    proposals: [
+      { item: "UGC द्वारा स्वीकृत अनुसन्धान परियोजना कार्यान्वयन सम्बन्धी छलफल" },
+      { item: "अनुसन्धान टोली (PI, Co-I) गठन तथा जिम्मेवारी निर्धारण" },
+      { item: "परियोजना सञ्चालन प्रक्रिया र समन्वयबारे निर्णय" },
+      { item: "प्रशासनिक तथा प्राविधिक सहयोग सम्बन्धी छलफल" },
+    ],
+    decisions: [
+      { item: "अनुसन्धान परियोजना कार्यान्वयनका लागि समिति गठन गर्ने निर्णय गरियो" },
+      { item: "Principal Investigator र Co-Investigators नियुक्त गरियो" },
+      { item: "परियोजना निर्धारित प्रस्ताव अनुसार सञ्चालन गर्ने निर्णय गरियो" },
+      { item: "सम्बन्धित निकायहरूसँग समन्वय गरी कार्य अगाडि बढाउने निर्णय गरियो" },
+    ],
+  });
 
   console.log("Seeded \"PCampus\" with teams, templates, and meetings");
 
