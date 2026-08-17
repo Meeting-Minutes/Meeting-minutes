@@ -4,6 +4,7 @@ import { meetings, meetingTeams, templates } from "@/db/schema";
 import { eq, desc, and, or, ilike, gte, lte } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission, resolveTeamAccess } from "@/lib/permissions";
+import { sendEmail, emailConfigured, appUrl, teamEmails } from "@/lib/email";
 
 export async function GET(
   _req: Request,
@@ -76,7 +77,7 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { title, description, scheduledAt, location, templateId } = await req.json();
+  const { title, description, scheduledAt, location, templateId, notify } = await req.json();
 
   if (!title || !scheduledAt) {
     return NextResponse.json({ error: "title and scheduledAt are required" }, { status: 400 });
@@ -122,5 +123,27 @@ export async function POST(
     .where(eq(meetings.id, meetingId))
     .limit(1);
 
-  return NextResponse.json(created, { status: 201 });
+  const emailed: string[] = [];
+  const emailErrors: { email: string; error: string }[] = [];
+  if (notify === true) {
+    for (const to of await teamEmails(access.orgId, teamId)) {
+      try {
+        await sendEmail({
+          to,
+          subject: `Meeting scheduled: ${title}`,
+          text: `${title} has been scheduled.\n\n${description ? description + "\n" : ""}When: ${new Date(scheduledAt).toLocaleString()}\n${location ? `Where: ${location}\n` : ""}\n\nOpen it at ${appUrl()}/meetings/${meetingId}`,
+        });
+        emailed.push(to);
+      } catch (e) {
+        emailErrors.push({ email: to, error: (e as Error).message });
+      }
+    }
+  }
+
+  return NextResponse.json({
+    ...created,
+    emailed,
+    emailErrors,
+    smtpEnabled: emailConfigured(),
+  }, { status: 201 });
 }

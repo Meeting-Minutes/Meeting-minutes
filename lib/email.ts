@@ -1,8 +1,26 @@
 import "server-only";
 import nodemailer from "nodemailer";
+import { and, eq, isNull, or } from "drizzle-orm";
+import { db } from "@/db";
+import { memberships, users } from "@/db/schema";
 
 export function emailConfigured(): boolean {
   return Boolean(process.env.SMTP_HOST);
+}
+
+/** Emails of everyone who can see a team: org-wide members plus that team's. */
+export async function teamEmails(orgId: string, teamId: string): Promise<string[]> {
+  const rows = await db
+    .select({ email: users.email })
+    .from(memberships)
+    .innerJoin(users, eq(memberships.userId, users.id))
+    .where(
+      and(
+        eq(memberships.organizationId, orgId),
+        or(isNull(memberships.teamId), eq(memberships.teamId, teamId)),
+      ),
+    );
+  return [...new Set(rows.map((r) => r.email))];
 }
 
 export function appUrl(): string {
