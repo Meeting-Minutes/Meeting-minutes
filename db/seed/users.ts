@@ -9,6 +9,7 @@ const DEMO_USERS = [
   { email: "admin@pcampus.edu.np", name: "Aarav (Admin)" },
   { email: "secretary@pcampus.edu.np", name: "Bina (Secretary)" },
   { email: "viewer@pcampus.edu.np", name: "Chirag (Viewer)" },
+  { email: "lead@pcampus.edu.np", name: "Diksha (R&D Lead)" },
 ];
 
 export async function seedUsers() {

@@ -4,9 +4,10 @@ import { useActionState, useRef } from "react";
 import { login } from "./actions";
 
 const DEMO_ACCOUNTS = [
-  { email: "admin@pcampus.edu.np", label: "Admin — both orgs" },
-  { email: "secretary@pcampus.edu.np", label: "Secretary in PCampus, Admin in Board" },
-  { email: "viewer@pcampus.edu.np", label: "View-only in PCampus, Editor in Board" },
+  { email: "admin@pcampus.edu.np", label: "Admin — PCampus & Riverside" },
+  { email: "secretary@pcampus.edu.np", label: "Secretary — PCampus" },
+  { email: "viewer@pcampus.edu.np", label: "View-only — PCampus" },
+  { email: "lead@pcampus.edu.np", label: "R&D Lead — PCampus" },
 ];
 
 export default function LoginPage() {

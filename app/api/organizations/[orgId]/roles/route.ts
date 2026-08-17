@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { roles } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
-import { canManageOrgRoles } from "@/lib/permissions";
+import { canAccessOrganization, canManageOrgRoles } from "@/lib/permissions";
 
 export async function GET(
   _req: Request,
@@ -13,8 +13,10 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
-  if (!(await canManageOrgRoles(user.id, orgId))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Read-only: any org member should see role names (used to render member
+  // lists). Mutations below stay gated on manage_roles.
+  if (!(await canAccessOrganization(user.id, orgId))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const rows = await db

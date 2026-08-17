@@ -1,6 +1,6 @@
 # Minutes Management System
 
-> Status: **Planning / pre-development.** Nothing is built yet — this document describes the intended system so the design can be reviewed and refined before implementation starts.
+> Status: **Working prototype.** Core flows — orgs, teams, custom roles & permissions, template-based minutes, PDF export, bulk account invites over SMTP, and Google-Drive-style sharing — are implemented. See [Roadmap](#roadmap) for what's still planned.
 
 A template-based meeting minutes management system for **any organization made of departments, committees, or teams** — universities, companies, NGOs, government offices. It replaces ad-hoc minute-taking (scattered docs, manual emailing, no searchable history) with a structured, permission-aware system that still leaves room for minutes that don't fit any template.
 
@@ -30,7 +30,19 @@ bun drizzle-kit migrate
 
 # 5. Verify the DB connection works end-to-end
 bun run db:check
+
+# 6. Optional — load the demo data (two orgs, nested teams, roles, Nepali + freeform minutes)
+bun run db:seed
 ```
+
+After seeding, sign in with any demo account (password for all: `demodemo123`):
+
+| Email | Role |
+| ----- | ---- |
+| `admin@pcampus.edu.np` | Admin — PCampus and Riverside NGO |
+| `lead@pcampus.edu.np` | R&D Lead — PCampus (team-scoped role) |
+| `secretary@pcampus.edu.np` | Secretary — PCampus |
+| `viewer@pcampus.edu.np` | View-only — PCampus |
 
 You should see `DB round-trip works: insert, select, delete all confirmed`. If not, confirm the container is actually up and bound to the port in your `.env`:
 
@@ -47,6 +59,22 @@ bun dev
 ```
 
 Visit `http://localhost:3000`.
+
+### Outbound email (optional)
+
+SMTP is only needed for **email invites** (bulk-adding accounts) and **share-by-email** links. Without it both features still work — the new-account passwords and share links are shown in the UI instead of being emailed.
+
+```bash
+# .env
+APP_URL=http://your-domain.example   # base URL used in email links
+SMTP_HOST=smtp.example.com           # set this to enable outbound email
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=no-reply@your-domain.example
+```
+
+Port `465` implies implicit TLS; other ports use STARTTLS. To try things without a real server, use a local SMTP capture like `Mailpit`/`MailHog` on port 1025.
 
 ### Schema changes
 
@@ -69,6 +97,8 @@ Generated migration files (`db/migrations/`) are committed to git — they're th
 | `bun drizzle-kit studio`   | Open Drizzle Studio to browse the DB                             |
 | `bun run db:check`         | Sanity-check the DB connection (insert/select/delete round trip) |
 | `bun run db:check:clustering` | Verify the clustering indexes exist and the tag-overlap join is index-driven |
+| `bun run db:check:shares`  | Verify share tokens resolve, cascade-delete, and bulk-add/reuse user logic |
+| `bun run db:seed`          | Seed the demo: two orgs, nested teams, org-wide + team-scoped roles, the Nepali committee template & minutes |
 
 ### Day-to-day operations (for a non-specialist admin)
 
@@ -169,6 +199,8 @@ On top of scope, search supports **filters**:
 12. **Multi-language support** as a first-class, per-deployment-configurable data model concern — not an English-only system with translation added later.
 13. **Agenda generator** — turns rough/informal input into a grammatically correct, properly structured agenda in the organization's configured language(s).
 14. **Scoped search with filters** — search boundary depends on the searcher's role (entire system vs. own committee), with filtering by attendees and time frame.
+15. **Bulk account add + email invites** — paste a list of emails to create accounts (auto-generated passwords), add them as org members in one request, and optionally email credentials over SMTP.
+16. **Share minutes outside the organization** — Google-Drive-style read-only links: share by email (recipient gets the link) or "anyone with the link", each revocable.
 
 ## Non-Functional Requirements
 
@@ -227,8 +259,10 @@ If you have opinions on any of these, open an issue — the design is still flui
 - **Framework**: [Next.js](https://nextjs.org)
 - **Database**: PostgreSQL, run via [Docker Compose](https://docs.docker.com/compose/) for local dev
 - **ORM**: [Drizzle](https://orm.drizzle.team) (schema + migrations via `drizzle-kit`)
+- **Email delivery**: [nodemailer](https://nodemailer.com) over configurable SMTP (`SMTP_HOST`/`PORT`/`USER`/`PASS`/`FROM`); invite and share emails
+- **Auth**: email + password sessions (bcrypt hashing, HS256-signed JWT cookie, 7-day expiry)
 
-Nothing beyond this is decided yet (hosting, email delivery, auth provider, etc.) — those will be filled in as they're chosen.
+Hosting, an external auth provider, and object storage for exported files are not decided yet.
 
 ## Contributing
 

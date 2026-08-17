@@ -95,7 +95,7 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
-  const { teamId, name, description } = await req.json();
+  const { teamId, name, description, parentTeamId } = await req.json();
 
   if (!(await hasPermission({ userId: user.id, orgId }, "manage_teams"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -106,16 +106,58 @@ export async function PATCH(
   }
 
   const [team] = await db
+    .select()
+    .from(teams)
+    .where(and(eq(teams.id, teamId), eq(teams.orgId, orgId)))
+    .limit(1);
+  if (!team) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const update: Record<string, unknown> = {};
+  if (name !== undefined) update.name = name;
+  if (description !== undefined) update.description = description || null;
+  if (parentTeamId !== undefined) {
+    if (parentTeamId === teamId) {
+      return NextResponse.json({ error: "A team cannot be its own parent" }, { status: 400 });
+    }
+    if (parentTeamId === null) {
+      update.parentTeamId = null;
+    } else {
+      const [parent] = await db
+        .select()
+        .from(teams)
+        .where(and(eq(teams.id, parentTeamId), eq(teams.orgId, orgId)))
+        .limit(1);
+      if (!parent) {
+        return NextResponse.json({ error: "Parent team not found" }, { status: 404 });
+      }
+      // Cycle guard: walking up from the new parent must never reach the team
+      // itself (would make the tree a loop).
+      let cursor: string | null = parentTeamId;
+      while (cursor) {
+        if (cursor === teamId) {
+          return NextResponse.json(
+            { error: "A team cannot be moved under its own sub-team" },
+            { status: 400 },
+          );
+        }
+        const [ancestor] = await db
+          .select({ parentTeamId: teams.parentTeamId })
+          .from(teams)
+          .where(eq(teams.id, cursor))
+          .limit(1);
+        cursor = ancestor?.parentTeamId ?? null;
+      }
+      update.parentTeamId = parentTeamId;
+    }
+  }
+
+  const [updated] = await db
     .update(teams)
-    .set({
-      ...(name !== undefined && { name }),
-      ...(description !== undefined && { description: description || null }),
-    })
+    .set(update)
     .where(and(eq(teams.id, teamId), eq(teams.orgId, orgId)))
     .returning();
 
-  if (!team) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(team);
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(

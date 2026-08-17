@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { teams, roles } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
-import { canManageTeamRoles } from "@/lib/permissions";
+import { resolveTeamAccess, canManageTeamRoles } from "@/lib/permissions";
 
 export async function GET(
   _req: Request,
@@ -21,7 +21,10 @@ export async function GET(
 
   if (!team) return NextResponse.json({ error: "Team not found" }, { status: 404 });
 
-  if (!(await canManageTeamRoles(user.id, team.orgId, teamId))) {
+  // Read-only: any team member sees the team's role names (renders member
+  // rosters). Mutations below stay gated on manage_team_roles/manage_roles.
+  const access = await resolveTeamAccess(user.id, teamId);
+  if (access?.orgId !== team.orgId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
