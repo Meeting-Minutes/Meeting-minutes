@@ -30,6 +30,18 @@ export default function MeetingDetailPage() {
   const [saving, setSaving] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
 
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareEmails, setShareEmails] = useState("");
+  const [shareAnyone, setShareAnyone] = useState(false);
+  const [existingShares, setExistingShares] = useState<
+    { id: string; email: string | null; url: string }[]
+  >([]);
+  const [lastShares, setLastShares] = useState<
+    { id: string; email: string | null; url: string }[]
+  >([]);
+  const [shareMsg, setShareMsg] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
+
   useEffect(() => {
     fetch(`/api/meetings/${meetingId}`)
       .then((r) => (r.ok ? r.json() : null))
@@ -111,6 +123,59 @@ export default function MeetingDetailPage() {
     }
   }
 
+  function openShare() {
+    setShareOpen(true);
+    setShareMsg("");
+    setShareEmails("");
+    setShareAnyone(false);
+    fetch(`/api/meetings/${meetingId}/minutes/share`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setExistingShares(d?.shares ?? []))
+      .catch(() => setShareMsg("Failed to load shares"));
+  }
+
+  async function createShares() {
+    const emails = shareEmails.split(/[\s,]+/).map((e) => e.trim()).filter(Boolean);
+    setShareMsg("");
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/minutes/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emails, anyone: shareAnyone }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Failed to share");
+      setLastShares(d.shares ?? []);
+      const notes: string[] = [];
+      if (emails.length > 0 && !d.smtpEnabled) {
+        notes.push("SMTP not configured — emails not sent, copy the links instead.");
+      } else if (d.emailed?.length > 0) {
+        notes.push(`Emailed ${d.emailed.length} recipient${d.emailed.length === 1 ? "" : "s"}.`);
+      }
+      if (d.emailErrors?.length > 0) notes.push(`${d.emailErrors.length} email failed to send.`);
+      setShareMsg(notes.join(" "));
+      const updated = await fetch(`/api/meetings/${meetingId}/minutes/share`).then((r) => r.json());
+      setExistingShares(updated.shares ?? []);
+    } catch (e) {
+      setShareMsg((e as Error).message);
+    }
+  }
+
+  async function revokeShare(shareId: string) {
+    const res = await fetch(`/api/meetings/${meetingId}/minutes/share`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shareId }),
+    });
+    if (res.ok) setExistingShares((prev) => prev.filter((s) => s.id !== shareId));
+  }
+
+  function copyUrl(url: string) {
+    navigator.clipboard.writeText(url);
+    setCopied(url);
+    setTimeout(() => setCopied(null), 1500);
+  }
+
   if (!meeting) {
     return (
       <div className="flex h-screen items-center justify-center bg-bg-primary text-text-muted text-sm">
@@ -155,6 +220,12 @@ export default function MeetingDetailPage() {
             </>
           )}
           <button
+            onClick={openShare}
+            className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95"
+          >
+            Share
+          </button>
+          <button
             onClick={save}
             disabled={saving}
             className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
@@ -178,6 +249,59 @@ export default function MeetingDetailPage() {
               style={{ color: "#1a1a1a", background: "#fff" }}
               dangerouslySetInnerHTML={{ __html: previewHtml }}
             />
+          </div>
+        </div>
+      )}
+
+      {shareOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-8" onClick={() => setShareOpen(false)}>
+          <div className="animate-pop-in bg-bg-primary rounded-xl w-full max-w-md flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+              <span className="text-sm font-semibold text-text-normal">Share minutes</span>
+              <button onClick={() => setShareOpen(false)} className="text-text-muted hover:text-text-normal text-sm px-1">✕</button>
+            </div>
+            <div className="p-4 flex flex-col gap-3">
+              <textarea
+                value={shareEmails}
+                onChange={(e) => setShareEmails(e.target.value)}
+                placeholder="recipient@example.com, another@example.com"
+                rows={3}
+                className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none resize-y"
+              />
+              <label className="flex items-center gap-2 text-sm text-text-normal cursor-pointer">
+                <input type="checkbox" checked={shareAnyone} onChange={(e) => setShareAnyone(e.target.checked)} className="accent-[var(--color-accent)]" />
+                Anyone with the link
+              </label>
+              <button onClick={createShares} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white self-start">
+                Create share
+              </button>
+              {shareMsg && <div className="text-xs text-text-muted">{shareMsg}</div>}
+              {lastShares.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {lastShares.map((s) => (
+                    <div key={s.id} className="flex items-center gap-2 text-xs">
+                      <span className="text-text-muted shrink-0">{s.email ?? "Anyone with link"}</span>
+                      <code className="flex-1 min-w-0 truncate text-accent">{s.url}</code>
+                      <button onClick={() => copyUrl(s.url)} className="shrink-0 text-accent hover:text-accent-hover">
+                        {copied === s.url ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {existingShares.length > 0 && (
+                <div className="border-t border-border/40 pt-3 flex flex-col gap-1.5">
+                  <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Existing</span>
+                  {existingShares.map((s) => (
+                    <div key={s.id} className="flex items-center gap-2 text-xs">
+                      <span className="text-text-muted shrink-0">{s.email ?? "Anyone with link"}</span>
+                      <code className="flex-1 min-w-0 truncate text-accent">{s.url}</code>
+                      <button onClick={() => revokeShare(s.id)} className="shrink-0 text-text-muted hover:text-danger" title="Revoke">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

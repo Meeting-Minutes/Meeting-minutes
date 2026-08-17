@@ -241,7 +241,13 @@ export default function Home() {
   const [meetingLocation, setMeetingLocation] = useState("");
   const [meetingDescription, setMeetingDescription] = useState("");
   const [meetingTemplateId, setMeetingTemplateId] = useState("");
+  const [meetingNotify, setMeetingNotify] = useState(false);
   const [scheduling, setScheduling] = useState(false);
+  const [showEmailTeam, setShowEmailTeam] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailResult, setEmailResult] = useState("");
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -416,7 +422,7 @@ export default function Home() {
     const scheduledAt = `${meetingDate}T${meetingTime}:00`;
     const res = await fetch(`/api/teams/${activeTeamId}/meetings`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: meetingTitle.trim(), description: meetingDescription.trim() || null, scheduledAt, location: meetingLocation.trim() || null, ...(meetingTemplateId ? { templateId: meetingTemplateId } : {}) }),
+      body: JSON.stringify({ title: meetingTitle.trim(), description: meetingDescription.trim() || null, scheduledAt, location: meetingLocation.trim() || null, notify: meetingNotify, ...(meetingTemplateId ? { templateId: meetingTemplateId } : {}) }),
     });
     setScheduling(false);
     if (!res.ok) {
@@ -426,7 +432,31 @@ export default function Home() {
     const meeting = await res.json();
     setMeetings((prev) => [meeting, ...prev]);
     setShowSchedule(false);
-    setMeetingTitle(""); setMeetingDescription(""); setMeetingDate(""); setMeetingTime(""); setMeetingLocation(""); setMeetingTemplateId("");
+    setMeetingTitle(""); setMeetingDescription(""); setMeetingDate(""); setMeetingTime(""); setMeetingLocation(""); setMeetingTemplateId(""); setMeetingNotify(false);
+    if (meetingNotify && !meeting.smtpEnabled && meeting.emailErrors?.length > 0) {
+      setError("Meeting scheduled — email invites not sent (SMTP not configured).");
+    }
+  }
+
+  async function sendTeamEmail() {
+    if (!activeTeamId || !emailSubject.trim() || !emailMessage.trim()) return;
+    setError(""); setEmailSending(true); setEmailResult("");
+    const res = await fetch(`/api/teams/${activeTeamId}/email`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject: emailSubject.trim(), message: emailMessage.trim() }),
+    });
+    setEmailSending(false);
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setError(d.error || "Failed to send email"); return;
+    }
+    if (d.emailErrors?.length > 0) {
+      setError(`${d.emailErrors.length} email(s) failed to send (SMTP not configured?).`);
+    }
+    setEmailResult(d.emailed.length > 0
+      ? `Emailed ${d.emailed.length} member${d.emailed.length === 1 ? "" : "s"}.`
+      : "No members found to email.");
+    setEmailSubject(""); setEmailMessage("");
   }
 
   async function logout() {
@@ -597,6 +627,12 @@ export default function Home() {
                 className="ml-auto text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
               >
                 ✎ Edit
+              </button>
+              <button
+                onClick={() => { setError(""); setEmailResult(""); setShowEmailTeam(true); }}
+                className="text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
+              >
+                ✉ Email team
               </button>
             </>
           ) : activeOrg ? (
@@ -1023,6 +1059,47 @@ export default function Home() {
           creating={creating}
         />
       )}
+      {showEmailTeam && activeTeam && (
+        <ModalOverlay onClose={() => setShowEmailTeam(false)}>
+          <div className="animate-pop-in bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
+            <h2 className="text-[17px] font-semibold text-text-normal mb-5">Email {activeTeam.name}</h2>
+            <input
+              value={emailSubject}
+              onChange={(e) => setEmailSubject(e.target.value)}
+              placeholder="Subject"
+              className="w-full px-3.5 py-2.5 text-sm mb-4"
+              autoFocus
+              disabled={emailSending}
+            />
+            <textarea
+              value={emailMessage}
+              onChange={(e) => setEmailMessage(e.target.value)}
+              placeholder="Message"
+              rows={5}
+              className="w-full px-3.5 py-2.5 text-sm mb-4 resize-none"
+              disabled={emailSending}
+            />
+            {emailResult && <p className="text-success text-sm mb-4">{emailResult}</p>}
+            {error && <p className="text-danger text-sm mb-4">{error}</p>}
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowEmailTeam(false)}
+                disabled={emailSending}
+                className="px-4 py-2 text-sm text-text-muted hover:text-text-normal transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={sendTeamEmail}
+                disabled={emailSending || !emailSubject.trim() || !emailMessage.trim()}
+                className="btn-primary px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+              >
+                {emailSending ? "Sending\u2026" : "Send to team"}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
       {showSchedule && (
         <ModalOverlay onClose={() => setShowSchedule(false)}>
           <div className="animate-pop-in bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
@@ -1077,6 +1154,15 @@ export default function Home() {
               className="w-full px-3.5 py-2.5 text-sm mb-4"
               disabled={scheduling}
             />
+            <label className="flex items-center gap-2 text-sm text-text-normal mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={meetingNotify}
+                onChange={(e) => setMeetingNotify(e.target.checked)}
+                className="accent-[var(--color-accent)]"
+              />
+              Email invite to team members
+            </label>
             {error && <p className="text-danger text-sm mb-4">{error}</p>}
             <div className="flex gap-3 justify-end">
               <button

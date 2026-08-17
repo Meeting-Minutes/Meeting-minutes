@@ -238,6 +238,18 @@ TODO: audit log
 | diff | jsonb | before/after, or a change summary |
 | created_at | timestamp | |
 
+**`shares`** — Google-Drive-style read-only sharing of a minute with outsiders
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| minutes_id | uuid FK → minutes, `cascade` on delete | |
+| token | text unique | the magic link — the token IS the access secret |
+| email | text, **nullable** | null = "anyone with the link" |
+| created_by | uuid FK → users, `set null` on delete | |
+| created_at | timestamp | |
+
+The public page `GET /share/[token]` resolves the token → minute and renders it read-only (same `lib/render-pdf.ts` path as Preview) with **no auth and no org navigation**. Creating or revoking a share is gated on the `export_minutes` permission (closest catalog entry to "get minutes out" — no new permission added, per the §8 catalog-growth stance). Shares of a minute are deleted with the minute.
+
 ---
 
 ## 3. Multi-org / multi-team membership

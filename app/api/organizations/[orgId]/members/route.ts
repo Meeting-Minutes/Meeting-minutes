@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 import { db } from "@/db";
-import { memberships, users, roles } from "@/db/schema";
+import { memberships, users, roles, organizations } from "@/db/schema";
 import { eq, and, isNull, inArray } from "drizzle-orm";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, createUser } from "@/lib/auth";
+import { sendEmail, appUrl } from "@/lib/email";
 import {
   isRoleScopeValid,
   resolveTeamAccess,
@@ -50,6 +52,7 @@ export async function GET(
       .select({
         id: memberships.id,
         userId: memberships.userId,
+        roleId: memberships.roleId,
         teamId: memberships.teamId,
         createdAt: memberships.createdAt,
         user: { id: users.id, email: users.email, name: users.name },
@@ -68,6 +71,7 @@ export async function GET(
     .selectDistinctOn([memberships.userId], {
       id: memberships.id,
       userId: memberships.userId,
+      roleId: memberships.roleId,
       teamId: memberships.teamId,
       createdAt: memberships.createdAt,
       user: { id: users.id, email: users.email, name: users.name },
@@ -95,7 +99,13 @@ export async function POST(
   if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
-  const { email, teamId, roleId } = await req.json();
+  const body = await req.json();
+  const { email, teamId, roleId } = body as {
+    email?: string;
+    teamId?: string | null;
+    roleId?: string | null;
+  };
+  const emails: { email: string; name?: string }[] | undefined = body.emails;
 
   const access = teamId
     ? await resolveTeamAccess(currentUser.id, teamId)
@@ -113,6 +123,100 @@ export async function POST(
     ))
   ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (emails !== undefined) {
+    const role = await validateRole(orgId, teamId, roleId);
+    if ("error" in role) {
+      return NextResponse.json({ error: role.error }, { status: role.status });
+    }
+
+    const sendInvite = body.sendInvite === true;
+    const [org] = await db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    const orgName = org?.name ?? "organization";
+
+    const unique = [
+      ...new Map(
+        emails
+          .map((e) =>
+            typeof e === "string" ? { email: e } : e,
+          )
+          .filter((e) => typeof e.email === "string" && e.email.trim() !== "")
+          .map((e) => [e.email.trim().toLowerCase(), e]),
+      ).values(),
+    ];
+
+    const created: { email: string; name?: string; password: string }[] = [];
+    const alreadyMembers: string[] = [];
+    const emailed: string[] = [];
+    const emailedSet = new Set<string>();
+    const emailErrors: { email: string; error: string }[] = [];
+
+    for (const { email, name } of unique) {
+      let [user] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+
+      let password = "";
+      if (!user) {
+        password = randomBytes(12).toString("base64url");
+        user = await createUser(name ?? email, email, password);
+        created.push({ email, name, password });
+      }
+
+      const [membership] = await db
+        .insert(memberships)
+        .values({
+          userId: user.id,
+          organizationId: orgId,
+          teamId: teamId || null,
+          roleId: role.roleId,
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      if (!membership) {
+        alreadyMembers.push(email);
+        continue;
+      }
+
+      if (!sendInvite) continue;
+      const isNew = created.some((c) => c.email === email);
+      try {
+        await sendEmail({
+          to: email,
+          subject: `Your ${orgName} account`,
+          text: isNew
+            ? `Your ${orgName} account has been created.\n\nSign in at ${appUrl()}\nEmail: ${email}\nPassword: ${password}`
+            : `You've been added to ${orgName}. Sign in at ${appUrl()} with your existing account.`,
+        });
+        emailed.push(email);
+        emailedSet.add(email);
+      } catch (e) {
+        emailErrors.push({ email, error: (e as Error).message });
+      }
+    }
+
+    // If the password reached the recipient by email, don't echo it back.
+    const createdForResponse = created.map((c) =>
+      emailedSet.has(c.email)
+        ? { email: c.email, name: c.name }
+        : c,
+    );
+
+    return NextResponse.json({
+      bulk: true,
+      created: createdForResponse,
+      alreadyMembers,
+      emailed,
+      emailErrors,
+    });
   }
 
   if (!email || typeof email !== "string") {

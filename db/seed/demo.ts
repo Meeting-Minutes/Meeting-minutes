@@ -12,41 +12,10 @@ import {
   roles,
   rolePermissions,
   permissions,
+  shares,
 } from "../schema";
-import { eq, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { bootstrapOrgAdmin } from "@/lib/permissions";
-
-// ─── standard committee template ───────────────────────────────────────────
-
-const COMMITTEE_FIELDS = [
-  { name: "title", label: "Meeting Title", type: "text" },
-  { name: "date", label: "Date", type: "date" },
-  { name: "subject", label: "Subject", type: "textarea" },
-  { name: "attendees", label: "Attendees", type: "table", config: { columns: [{ key: "name", label: "Name" }, { key: "role", label: "Role" }, { key: "notes", label: "Notes" }] } },
-  { name: "agenda", label: "Agenda", type: "table", config: { columns: [{ key: "item", label: "Item" }, { key: "decision", label: "Decision" }] } },
-  { name: "notes", label: "Notes", type: "textarea" },
-  { name: "signatures", label: "Signatures", type: "table", config: { columns: [{ key: "name", label: "Name" }] } },
-];
-
-// ─── daily standup template ────────────────────────────────────────────────
-
-const STANDUP_FIELDS = [
-  { name: "title", label: "Title", type: "text" },
-  { name: "date", label: "Date", type: "date" },
-  { name: "updates", label: "Team Updates", type: "table", config: { columns: [{ key: "name", label: "Name" }, { key: "yesterday", label: "Yesterday" }, { key: "today", label: "Today" }, { key: "blockers", label: "Blockers" }] } },
-  { name: "actions", label: "Action Items", type: "table", config: { columns: [{ key: "item", label: "Item" }, { key: "owner", label: "Owner" }] } },
-];
-
-// ─── HOA template ──────────────────────────────────────────────────────────
-
-const HOA_FIELDS = [
-  { name: "title", label: "Meeting Title", type: "text" },
-  { name: "date", label: "Date", type: "date" },
-  { name: "agenda", label: "Agenda", type: "table", config: { columns: [{ key: "item", label: "Item" }, { key: "decision", label: "Decision" }] } },
-  { name: "action_items", label: "Action Items", type: "table", config: { columns: [{ key: "action", label: "Action" }, { key: "owner", label: "Owner" }, { key: "due", label: "Due Date" }] } },
-  { name: "notes", label: "Notes", type: "textarea" },
-  { name: "signers", label: "Signatures", type: "table", config: { columns: [{ key: "name", label: "Name" }] } },
-];
 
 // ─── PCampus minute (Nepali committee minutes) template ────────────────────
 
@@ -72,19 +41,48 @@ async function getUserId(email: string) {
   return u?.id ?? null;
 }
 
-async function createSecretaryRole(orgId: string, userId: string) {
-  const perms = await db
-    .select({ id: permissions.id })
-    .from(permissions)
-    .where(ne(permissions.key, "superuser"));
-  const [r] = await db
-    .insert(roles)
-    .values({ id: randomUUID(), name: "Secretary", orgId })
-    .onConflictDoNothing()
-    .returning();
-  if (!r) return;
-  await db.insert(rolePermissions).values(perms.map((p) => ({ roleId: r.id, permissionId: p.id })));
-  await db.insert(memberships).values({ userId, organizationId: orgId, roleId: r.id }).onConflictDoNothing();
+// Find-or-create patterns so the seed stays re-runnable: orgs are created once,
+// everything else is keyed by name+scope and never duplicated.
+
+async function ensureTeam(orgId: string, name: string, parentTeamId: string | null = null) {
+  const [t] = await db
+    .select({ id: teams.id })
+    .from(teams)
+    .where(and(eq(teams.orgId, orgId), eq(teams.name, name)))
+    .limit(1);
+  if (t) return t.id;
+  const id = randomUUID();
+  await db.insert(teams).values({ id, orgId, name, parentTeamId });
+  return id;
+}
+
+// `permKeys` = subset of catalog keys; "all" = every catalog key except superuser.
+async function ensureRole(
+  orgId: string, name: string, teamId: string | null, permKeys: string[] | "all",
+) {
+  const [existing] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.orgId, orgId), eq(roles.name, name), teamId ? eq(roles.teamId, teamId) : isNull(roles.teamId)))
+    .limit(1);
+  if (existing) return existing.id;
+
+  const id = randomUUID();
+  await db.insert(roles).values({ id, orgId, name, teamId });
+  const perms = permKeys === "all"
+    ? await db.select({ id: permissions.id }).from(permissions).where(ne(permissions.key, "superuser"))
+    : await db.select({ id: permissions.id }).from(permissions).where(inArray(permissions.key, permKeys));
+  await db.insert(rolePermissions)
+    .values(perms.map((p) => ({ roleId: id, permissionId: p.id })))
+    .onConflictDoNothing();
+  return id;
+}
+
+async function ensureMember(userId: string, orgId: string, teamId: string | null, roleId: string | null) {
+  await db
+    .insert(memberships)
+    .values({ userId, organizationId: orgId, teamId, roleId })
+    .onConflictDoNothing();
 }
 
 async function createTemplate(
@@ -102,17 +100,110 @@ async function createTemplate(
   return id;
 }
 
+// Idempotent: skips a meeting that already exists with the same title+org.
+// `content` empty = scheduled meeting with no minutes yet; non-empty = minutes
+// row inserted (templateId null for freeform). `status` controls draft/published.
 async function createMeeting(
   orgId: string, teamId: string, templateId: string | null, title: string, scheduledAt: string,
-  createdBy: string, content: Record<string, unknown>,
+  createdBy: string, content: Record<string, unknown> = {}, status: "draft" | "published" = "published",
 ) {
+  const [existing] = await db
+    .select({ id: meetings.id })
+    .from(meetings)
+    .where(and(eq(meetings.orgId, orgId), eq(meetings.title, title)))
+    .limit(1);
+  if (existing) return existing.id;
+
   const id = randomUUID();
   await db.insert(meetings).values({ id, orgId, templateId, title, scheduledAt: new Date(scheduledAt), createdBy });
   await db.insert(meetingTeams).values({ meetingId: id, teamId }).onConflictDoNothing();
-  if (templateId && Object.keys(content).length > 0) {
-    await db.insert(minutes).values({ id, templateId, status: "published", content }).onConflictDoNothing();
+  if (Object.keys(content).length > 0) {
+    await db.insert(minutes).values({ id, templateId, status, content }).onConflictDoNothing();
   }
   return id;
+}
+
+async function ensureShare(minutesId: string, token: string, email: string | null, createdBy: string) {
+  await db
+    .insert(shares)
+    .values({ id: randomUUID(), minutesId, token, email, createdBy })
+    .onConflictDoNothing();
+}
+
+async function deleteMeeting(meetingId: string) {
+  await db.delete(minutes).where(eq(minutes.id, meetingId));
+  await db.delete(meetingTeams).where(eq(meetingTeams.meetingId, meetingId));
+  await db.delete(meetings).where(eq(meetings.id, meetingId));
+}
+
+async function deleteOrg(orgId: string) {
+  const orgMeetings = await db.select({ id: meetings.id }).from(meetings).where(eq(meetings.orgId, orgId));
+  for (const m of orgMeetings) await deleteMeeting(m.id);
+  await db.delete(memberships).where(eq(memberships.organizationId, orgId));
+  const orgRoles = await db.select({ id: roles.id }).from(roles).where(eq(roles.orgId, orgId));
+  if (orgRoles.length > 0) {
+    await db.delete(rolePermissions).where(inArray(rolePermissions.roleId, orgRoles.map((r) => r.id)));
+    await db.delete(roles).where(inArray(roles.id, orgRoles.map((r) => r.id)));
+  }
+  await db.delete(teams).where(eq(teams.orgId, orgId));
+  await db.delete(templates).where(eq(templates.orgId, orgId));
+  await db.delete(organizations).where(eq(organizations.id, orgId));
+}
+
+// Remove everything a previous seed version created that the current demo no
+// longer wants, so re-running the seed is repeatable.
+// ponytail: demo-only nukes, matched by exact seed names — nothing user-made
+// collides; if the demo ever grows real org data this becomes a fresh-DB script.
+async function cleanupLegacyDemo() {
+  const [board] = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(eq(organizations.name, "PCampus Administration Board"))
+    .limit(1);
+  if (board) await deleteOrg(board.id);
+
+  const [pc] = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(eq(organizations.name, "PCampus"))
+    .limit(1);
+  if (!pc) return;
+
+  const genericTemplates = ["Standard Meeting", "Daily Standup"];
+  const tmpl = await db
+    .select({ id: templates.id })
+    .from(templates)
+    .where(and(eq(templates.orgId, pc.id), inArray(templates.name, genericTemplates)));
+  if (tmpl.length > 0) {
+    const oldMeetings = await db
+      .select({ id: meetings.id })
+      .from(meetings)
+      .where(inArray(meetings.templateId, tmpl.map((t) => t.id)));
+    for (const m of oldMeetings) await deleteMeeting(m.id);
+    await db.delete(templates).where(inArray(templates.id, tmpl.map((t) => t.id)));
+  }
+
+  const freeform = await db
+    .select({ id: meetings.id })
+    .from(meetings)
+    .where(and(eq(meetings.orgId, pc.id), isNull(meetings.templateId)));
+  for (const m of freeform) {
+    const [row] = await db
+      .select({ title: meetings.title })
+      .from(meetings)
+      .where(eq(meetings.id, m.id))
+      .limit(1);
+    if (row?.title === "Coffee Chat") await deleteMeeting(m.id);
+  }
+
+  const dropTeams = await db
+    .select({ id: teams.id })
+    .from(teams)
+    .where(and(eq(teams.orgId, pc.id), inArray(teams.name, ["Design", "Marketing"])));
+  for (const t of dropTeams) {
+    await db.delete(memberships).where(eq(memberships.teamId, t.id));
+    await db.delete(teams).where(eq(teams.id, t.id));
+  }
 }
 
 // ─── main seed ─────────────────────────────────────────────────────────────
@@ -121,7 +212,10 @@ export async function seedDemo() {
   const adminId = await getUserId("admin@pcampus.edu.np");
   const secretaryId = await getUserId("secretary@pcampus.edu.np");
   const viewerId = await getUserId("viewer@pcampus.edu.np");
+  const leadId = await getUserId("lead@pcampus.edu.np");
   if (!adminId) return;
+
+  await cleanupLegacyDemo();
 
   // ── PCampus ─────────────────────────────────────────────────────────────
 
@@ -135,90 +229,40 @@ export async function seedDemo() {
     pcampusId = randomUUID();
     await db.insert(organizations).values({ id: pcampusId, name: "PCampus", slug: "pcampus" });
     await bootstrapOrgAdmin(pcampusId, adminId);
-
-    const teamNames = ["Engineering", "Design", "Marketing"];
-    for (const name of teamNames) {
-      const teamId = randomUUID();
-      await db.insert(teams).values({ id: teamId, orgId: pcampusId, name });
-      for (const uid of [adminId, secretaryId, viewerId]) {
-        if (uid) await db.insert(memberships).values({ userId: uid, organizationId: pcampusId, teamId }).onConflictDoNothing();
-      }
-    }
-    if (secretaryId) await createSecretaryRole(pcampusId, secretaryId);
   }
 
-  const [eng] = await db.select({ id: teams.id }).from(teams).where(eq(teams.name, "Engineering")).limit(1);
-  const teamId = eng?.id ?? "";
+  // org-wide admin + secretary roles, nested teams, memberships
+  const adminRoleId = (await db.select({ id: roles.id }).from(roles)
+    .where(and(eq(roles.orgId, pcampusId), eq(roles.name, "Admin"), isNull(roles.teamId))).limit(1))[0]?.id ?? null;
+  if (adminRoleId && adminId) await ensureMember(adminId, pcampusId, null, adminRoleId);
 
-  // ── templates ───────────────────────────────────────────────────────────
+  const engId = await ensureTeam(pcampusId, "Engineering");
+  const rdId = await ensureTeam(pcampusId, "Research & Development", engId);
 
-  const committeeId = await createTemplate(pcampusId, adminId,
-    "Standard Meeting", "Formal meeting with attendance, agenda, notes, and signatures",
-    COMMITTEE_FIELDS, "db/seed/templates/standard-meeting.hbs");
+  for (const uid of [adminId, secretaryId, viewerId]) {
+    if (uid) await ensureMember(uid, pcampusId, engId, null);
+  }
+  if (secretaryId) {
+    const secRoleId = await ensureRole(pcampusId, "Secretary", null, "all");
+    await ensureMember(secretaryId, pcampusId, null, secRoleId);
+  }
+  // Team-scoped role + holder on the Research & Development sub-team.
+  if (leadId) {
+    const leadRoleId = await ensureRole(pcampusId, "R&D Lead", rdId,
+      ["create_meeting", "edit_meeting", "export_minutes", "manage_members"]);
+    await ensureMember(leadId, pcampusId, rdId, leadRoleId);
+  }
 
-  const standupId = await createTemplate(pcampusId, adminId,
-    "Daily Standup", "Quick daily update with team updates and action items",
-    STANDUP_FIELDS, "db/seed/templates/daily-standup.hbs");
+  // ── template ─────────────────────────────────────────────────────────────
 
   const pcampusMinuteId = await createTemplate(pcampusId, adminId,
     "PCampus Minute", "नेपाली क्याम्पस समिति बैठकको कार्यविवरण — उपस्थिति, प्रस्ताव, निर्णय र हस्ताक्षर",
     PCAMPUS_FIELDS, "db/seed/templates/pcampus-minute.hbs");
 
-  // ── meetings with content ───────────────────────────────────────────────
+  // ── meetings: one per state the UI surfaces ──────────────────────────────
 
-  await createMeeting(pcampusId, teamId, committeeId, "Q3 Budget Review", "2026-07-20T10:00:00Z", adminId, {
-    title: "Q3 Budget Review",
-    date: "2026-07-20",
-    subject: "Quarterly budget allocation and spending forecast",
-    attendees: [
-      { name: "Aarav Sharma", role: "Chair", notes: "" },
-      { name: "Bina Adhikari", role: "Secretary", notes: "" },
-      { name: "Chirag Thapa", role: "Finance Lead", notes: "Presented budget slides" },
-    ],
-    agenda: [
-      { item: "Review Q2 spending vs budget", decision: "On track; Rs 1.2L under" },
-      { item: "Approve Q3 hiring budget", decision: "Approved — Rs 8L for 2 new hires" },
-      { item: "Infrastructure upgrade proposal", decision: "Deferred to next meeting for cost analysis" },
-    ],
-    notes: "Meeting ran on schedule. Bina will send updated budget spreadsheet by Friday. Next meeting: August 17.",
-    signatures: [{ name: "Aarav Sharma" }, { name: "Bina Adhikari" }],
-  });
-
-  await createMeeting(pcampusId, teamId, committeeId, "Sprint 12 Retrospective", "2026-07-28T14:00:00Z", adminId, {
-    title: "Sprint 12 Retrospective",
-    date: "2026-07-28",
-    subject: "What went well, what didn't, and action items for Sprint 13",
-    attendees: [
-      { name: "Aarav Sharma", role: "Scrum Master", notes: "" },
-      { name: "Deepak Rai", role: "Developer", notes: "" },
-      { name: "Elisha Gurung", role: "Developer", notes: "Remote via Teams" },
-    ],
-    agenda: [
-      { item: "What went well", decision: "CI pipeline improvements saved 2h/week; team velocity up 15%" },
-      { item: "What needs improvement", decision: "Code review turnaround too slow; aim for 24h SLA" },
-      { item: "Sprint 13 commitments", decision: "6 story points per dev; focus on auth module refactor" },
-    ],
-    notes: "Team morale is high. Deepak volunteered to draft a code-review SLA for team discussion.",
-    signatures: [{ name: "Aarav Sharma" }],
-  });
-
-  await createMeeting(pcampusId, teamId, standupId, "Daily Standup — Aug 1", "2026-08-01T09:00:00Z", adminId, {
-    title: "Daily Standup — Aug 1",
-    date: "2026-08-01",
-    updates: [
-      { name: "Aarav", yesterday: "Finalized sprint goals with PM", today: "Start auth module refactor", blockers: "None" },
-      { name: "Deepak", yesterday: "Fixed CI flaky test", today: "Code review backlog", blockers: "Waiting on staging access" },
-      { name: "Elisha", yesterday: "API docs update", today: "Auth module pairing with Aarav", blockers: "None" },
-    ],
-    actions: [
-      { item: "Grant Deepak staging access", owner: "Aarav" },
-      { item: "Schedule auth module architecture review", owner: "Elisha" },
-    ],
-  });
-
-  await createMeeting(pcampusId, teamId, null, "Coffee Chat", "2026-08-03T15:00:00Z", adminId, {});
-
-  await createMeeting(pcampusId, teamId, pcampusMinuteId,
+  // 1. Published Nepali template minutes (existing).
+  const committee = await createMeeting(pcampusId, engId, pcampusMinuteId,
     "अनुसन्धान परियोजना कार्यान्वयन समितिको बैठक", "2026-03-18T02:45:00Z", adminId, {
     title: "अनुसन्धान परियोजना कार्यान्वयन समितिको बैठक",
     date_np: "२०८२/१२/०४",
@@ -252,55 +296,52 @@ export async function seedDemo() {
     ],
   });
 
-  console.log("Seeded \"PCampus\" with teams, templates, and meetings");
+  // 2. Upcoming template meeting (scheduled, no minutes yet) — shows in «Upcoming».
+  await createMeeting(pcampusId, engId, pcampusMinuteId,
+    "Quarterly Planning Review — 2026", "2026-09-25T06:00:00Z", secretaryId ?? adminId);
 
-  // ── PCampus Administration Board ────────────────────────────────────────
+  // 3. Draft minutes on the R&D sub-team — shows the Draft badge.
+  await createMeeting(pcampusId, rdId, pcampusMinuteId,
+    "Research Grant Proposal Review", "2026-08-05T08:00:00Z", leadId ?? adminId, {
+    title: "Research Grant Proposal Review",
+    date_ad: "2026-08-05",
+    attendees: [{ name: "Diksha (R&D Lead)", designation: "R&D", post: "Coordinator" }],
+    proposals: [{ item: "Proposal drafts circulated for comment" }],
+    decisions: [],
+  }, "draft");
 
-  const existingH = await db.select({ id: organizations.id }).from(organizations)
-    .where(eq(organizations.name, "PCampus Administration Board")).limit(1);
-
-  let boardId: string;
-  if (existingH.length > 0) {
-    boardId = existingH[0].id;
-  } else {
-    boardId = randomUUID();
-    await db.insert(organizations).values({ id: boardId, name: "PCampus Administration Board", slug: "pcampus-admin-board" });
-    // In this org, secretary is admin — showing different roles per org
-    const boardAdmin = secretaryId ?? adminId;
-    await bootstrapOrgAdmin(boardId, boardAdmin);
-    const boardTeamId = randomUUID();
-    await db.insert(teams).values({ id: boardTeamId, orgId: boardId, name: "Board" });
-    for (const uid of [adminId, secretaryId, viewerId]) {
-      if (uid) await db.insert(memberships).values({ userId: uid, organizationId: boardId, teamId: boardTeamId }).onConflictDoNothing();
-    }
-    // viewer gets editor role in this org (different from viewer-only in PCampus)
-    if (viewerId) await createSecretaryRole(boardId, viewerId);
-  }
-
-  const [bt] = await db.select({ id: teams.id }).from(teams).where(eq(teams.orgId, boardId)).limit(1);
-  const boardTeamId = bt?.id ?? "";
-
-  const boardTemplateId = await createTemplate(boardId, adminId,
-    "Board Meeting", "Campus administration board meeting agenda and action items",
-    HOA_FIELDS, "db/seed/templates/hoa-meeting.hbs");
-
-  await createMeeting(boardId, boardTeamId, boardTemplateId,
-    "August 2026 Board Meeting", "2026-08-05T18:30:00Z", adminId, {
-    title: "August 2026 Board Meeting",
-    date: "2026-08-05",
-    agenda: [
-      { item: "Campus infrastructure maintenance contracts", decision: "Approved — 2-year extension with CampusCare Services" },
-      { item: "Library renovation budget increase", decision: "Approved — 10% increase for digital resources" },
-      { item: "New department proposal", decision: "Approved with conditions — must submit plan by Sept 1" },
-    ],
-    action_items: [
-      { action: "Sign infrastructure contract", owner: "Finance Officer", due: "2026-08-15" },
-      { action: "Review department plan", owner: "Board Secretary", due: "2026-09-01" },
-      { action: "Send renovation notice to faculty", owner: "Campus Manager", due: "2026-08-10" },
-    ],
-    notes: "Quorum was met (4 of 5 board members present). Next meeting scheduled for October 7.",
-    signers: [{ name: "Board President" }, { name: "Board Secretary" }],
+  // 4. Freeform (no template) English minutes — shows the «No template» path.
+  await createMeeting(pcampusId, engId, null,
+    "Faculty Induction — Welcome Sync", "2026-07-30T09:00:00Z", adminId, {
+    objective: "Welcome new faculty and walk through the onboarding checklist.",
+    discussed: ["Course loads", "Mentorship pairing", "Lab access"],
+    decisions: ["Hire two lab assistants", "Hold monthly faculty sync"],
   });
 
-  console.log("Seeded \"PCampus Administration Board\" with template and meeting");
+  // 5. Pre-seeded share on the published minutes — Share dialog shows it.
+  if (adminId) await ensureShare(committee, randomUUID(), null, adminId);
+
+  // ── Second org: shows org-agnostic / multi-tenant, English, no extra login ──
+
+  const org2 = await db.select({ id: organizations.id }).from(organizations)
+    .where(eq(organizations.name, "Riverside NGO")).limit(1);
+  let riversideId: string;
+  if (org2.length > 0) {
+    riversideId = org2[0].id;
+  } else {
+    riversideId = randomUUID();
+    await db.insert(organizations).values({ id: riversideId, name: "Riverside NGO", slug: "riverside-ngo" });
+    await bootstrapOrgAdmin(riversideId, adminId);
+  }
+
+  const opsId = await ensureTeam(riversideId, "Field Operations");
+  await createMeeting(riversideId, opsId, null,
+    "Community Health Outreach — Planning", "2026-07-30T09:00:00Z", adminId, {
+    agenda: ["Vaccination drive scheduling", "Volunteer roster"],
+    decisions: ["Run weekly mobile clinics in Ward 4", "Partner with local health post"],
+  });
+  await createMeeting(riversideId, opsId, null,
+    "Field Visit — Lamjung District", "2026-09-18T07:00:00Z", adminId);
+
+  console.log("Seeded \"PCampus\" (teams, roles, template, minutes) and \"Riverside NGO\"");
 }

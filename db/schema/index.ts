@@ -11,6 +11,7 @@ export * from "./organizations";
 export * from "./permissions";
 export * from "./role_permissions";
 export * from "./roles";
+export * from "./shares";
 export * from "./tags";
 export * from "./teams";
 export * from "./templates";

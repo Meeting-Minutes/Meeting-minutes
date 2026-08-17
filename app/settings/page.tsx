@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { PermissionGrid } from "./permission-grid";
+import TeamsTab from "./teams-tab";
 
 type Org = { id: string; name: string; description?: string | null; slug: string };
-type Team = { id: string; name: string; description?: string | null };
 type Role = { id: string; name: string; orgId: string; teamId: string | null };
 type Perm = { id: string; key: string; description: string | null };
 type Member = {
@@ -60,9 +61,6 @@ function SettingsContent() {
   // Members
   const [members, setMembers] = useState<Member[]>([]);
   const [addEmail, setAddEmail] = useState("");
-
-  // Teams
-  const [teams, setTeams] = useState<Team[]>([]);
 
   // Templates
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -122,13 +120,6 @@ function SettingsContent() {
     if (!orgId || tab !== "members") return;
     fetchJson(`/api/organizations/${orgId}/members`)
       .then(setMembers)
-      .catch((e) => setError(e.message));
-  }, [orgId, tab, fetchJson]);
-
-  useEffect(() => {
-    if (!orgId || tab !== "teams") return;
-    fetchJson(`/api/organizations/${orgId}/teams`)
-      .then(setTeams)
       .catch((e) => setError(e.message));
   }, [orgId, tab, fetchJson]);
 
@@ -235,19 +226,14 @@ function SettingsContent() {
     }
   }
 
-  async function createTeam() {
-    const name = window.prompt("Team name");
-    if (!orgId || !name?.trim()) return;
-    try {
-      const team = await fetchJson(`/api/organizations/${orgId}/teams`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
-      });
-      setTeams((prev) => [...prev, team]);
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  async function bulkAddMembers(emails: string[], sendInvite: boolean) {
+    const d = await fetchJson(`/api/organizations/${orgId}/members`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emails, teamId: null, sendInvite }),
+    });
+    setMembers(await fetchJson(`/api/organizations/${orgId}/members`));
+    return d;
   }
 
   function openTemplateBuilder(template?: Template) {
@@ -342,13 +328,14 @@ function SettingsContent() {
               addEmail={addEmail}
               onAddEmail={setAddEmail}
               onAddMember={addMember}
+              onBulkAdd={bulkAddMembers}
               onAssignRole={assignRole}
               onRemoveMember={removeMember}
               onError={setError}
             />
           )}
           {org && tab === "teams" && (
-            <TeamsTab teams={teams} onCreateTeam={createTeam} />
+            <TeamsTab key={org.id} orgId={org.id} fetchJson={fetchJson} onError={setError} />
           )}
           {org && tab === "templates" && (
             <TemplatesTab
@@ -553,35 +540,11 @@ function RolesTab({
           )}
         </h1>
         {selectedRole && (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
-            {perms.map((p, i) => {
-              const on = selectedPerms.includes(p.id);
-              return (
-                <label
-                  key={p.id}
-                  className={`card-hover flex items-start gap-3 px-3.5 py-3 rounded-xl border text-sm cursor-pointer transition-colors animate-fade-up ${
-                    on
-                      ? "border-accent/30 bg-gradient-to-br from-accent/10 to-accent/5"
-                      : "border-border/40 bg-surface/50 hover:border-border"
-                  }`}
-                  style={{ animationDelay: `${Math.min(i * 20, 300)}ms` }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={(e) => onTogglePermission(selectedRole.id, p.id, e.target.checked)}
-                    className="mt-0.5 accent-[var(--color-accent)]"
-                  />
-                  <span className="min-w-0">
-                    <span className={`block font-medium truncate ${on ? "text-accent" : "text-text-normal"}`}>{p.key}</span>
-                    {p.description && (
-                      <span className="block text-xs text-text-muted mt-0.5">{p.description}</span>
-                    )}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
+          <PermissionGrid
+            perms={perms}
+            selected={selectedPerms}
+            onToggle={(permId, on) => onTogglePermission(selectedRole.id, permId, on)}
+          />
         )}
       </div>
     </div>
@@ -594,6 +557,7 @@ function MembersTab({
   addEmail,
   onAddEmail,
   onAddMember,
+  onBulkAdd,
   onAssignRole,
   onRemoveMember,
   onError,
@@ -603,10 +567,68 @@ function MembersTab({
   addEmail: string;
   onAddEmail: (v: string) => void;
   onAddMember: () => void;
+  onBulkAdd: (
+    emails: string[],
+    sendInvite: boolean,
+  ) => Promise<{
+    created: { email: string; name?: string; password?: string }[];
+    alreadyMembers: string[];
+    emailed: string[];
+    emailErrors: { email: string; error: string }[];
+  }>;
   onAssignRole: (userId: string, teamId: string | null, roleId: string | null) => void;
   onRemoveMember: (userId: string, teamId: string | null) => void;
   onError: (e: string) => void;
 }) {
+  const [bulkEmails, setBulkEmails] = useState("");
+  const [bulkSendInvite, setBulkSendInvite] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResult, setBulkResult] = useState<null | Awaited<ReturnType<typeof onBulkAdd>>>(null);
+
+  function onCsvFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      const emails = text
+        .split(/[\n,;\t]+/)
+        .map((e) => e.trim().replace(/^"?|"?$/g, "").toLowerCase())
+        .filter((e) => e.includes("@"));
+      if (emails.length > 0) setBulkEmails(emails.join("\n"));
+    };
+    reader.readAsText(file);
+  }
+
+  function downloadCredentialsCsv() {
+    if (!bulkResult) return;
+    const rows = bulkResult.created
+      .filter((c) => c.password)
+      .map((c) => `${c.email},${c.password}`);
+    if (rows.length === 0) return;
+    const blob = new Blob(["email,password\n" + rows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "credentials.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function bulkAdd() {
+    const emails = bulkEmails.split("\n").map((e) => e.trim()).filter(Boolean);
+    if (!emails.length) return;
+    setBulkBusy(true);
+    setBulkResult(null);
+    try {
+      setBulkResult(await onBulkAdd(emails, bulkSendInvite));
+      setBulkEmails("");
+      onError("");
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (roles.length === 0 && members.length > 0) {
       onError("Could not load roles — role assignment may be unavailable.");
@@ -636,6 +658,86 @@ function MembersTab({
         >
           Add member
         </button>
+      </div>
+      <div className="animate-fade-up card-hover bg-surface border border-border/40 rounded-2xl p-3 flex flex-col gap-2" style={{ animationDelay: "80ms" }}>
+        <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Bulk add (one email per line)</span>
+        <textarea
+          value={bulkEmails}
+          onChange={(e) => setBulkEmails(e.target.value)}
+          placeholder={"alice@example.com\nbob@example.com"}
+          rows={3}
+          className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none resize-y"
+        />
+        <label className="flex items-center gap-2 text-xs text-accent hover:text-accent-hover cursor-pointer self-start">
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 16V4m0 0 4 4m-4-4-4 4" />
+            <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" strokeLinecap="round" />
+          </svg>
+          Upload .csv
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onCsvFile(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-text-normal cursor-pointer">
+            <input
+              type="checkbox"
+              checked={bulkSendInvite}
+              onChange={(e) => setBulkSendInvite(e.target.checked)}
+              className="accent-[var(--color-accent)]"
+            />
+            Create accounts and email credentials
+          </label>
+          <button
+            onClick={bulkAdd}
+            disabled={bulkBusy}
+            className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {bulkBusy ? "Adding…" : "Add all"}
+          </button>
+        </div>
+        {bulkResult && (
+          <div className="flex flex-col gap-1.5 border-t border-border/40 pt-2">
+            <div className="text-sm text-text-normal flex items-center gap-2">
+              <span>
+                {bulkResult.created.length} created · {bulkResult.alreadyMembers.length} already members
+                {bulkResult.emailed.length > 0 && ` · ${bulkResult.emailed.length} emailed`}
+                {bulkResult.emailErrors.length > 0 && ` · ${bulkResult.emailErrors.length} email errors`}
+              </span>
+              {bulkResult.created.some((c) => c.password) && (
+                <button
+                  onClick={downloadCredentialsCsv}
+                  className="ml-auto shrink-0 px-3 py-1 rounded-lg bg-accent/10 border border-accent/25 text-accent text-xs font-medium hover:bg-accent/20 transition-colors"
+                >
+                  ↓ Download credentials .csv
+                </button>
+              )}
+            </div>
+            {bulkResult.created.some((c) => c.password) && (
+              <div className="overflow-auto max-h-40 rounded-lg bg-bg-input border border-border/40 p-2 text-[11px] font-mono text-text-muted">
+                {bulkResult.created.map((c) => (
+                  <div key={c.email}>
+                    {c.email}
+                    {c.password ? `  /  ${c.password}` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
+            {bulkResult.created.length > 0 && !bulkResult.created.some((c) => c.password) && (
+              <div className="text-xs text-text-muted">Passwords emailed — copy from the invite.</div>
+            )}
+            {bulkResult.emailErrors.map((e) => (
+              <div key={e.email} className="text-xs text-danger">{e.email}: {e.error}</div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         {members.map((m, i) => (
@@ -675,53 +777,6 @@ function MembersTab({
         ))}
         {members.length === 0 && (
           <div className="text-sm text-text-muted animate-fade-up">No members yet.</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TeamsTab({
-  teams,
-  onCreateTeam,
-}: {
-  teams: Team[];
-  onCreateTeam: () => void;
-}) {
-  return (
-    <div className="max-w-3xl flex flex-col gap-5">
-      <div className="animate-fade-up flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">Teams</h1>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20 text-accent font-medium">
-            {teams.length}
-          </span>
-        </div>
-        <button
-          onClick={onCreateTeam}
-          className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white"
-        >
-          New team
-        </button>
-      </div>
-      <div className="flex flex-col gap-2">
-        {teams.map((t, i) => (
-          <div
-            key={t.id}
-            className="card-hover group flex items-center gap-3 px-4 py-3 rounded-xl border border-border/40 bg-surface/50 animate-fade-up"
-            style={{ animationDelay: `${Math.min(i * 30, 250)}ms` }}
-          >
-            <span className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-surface to-bg-tertiary border border-border/50 flex items-center justify-center text-accent font-bold group-hover:from-[#6b76ff]/25 group-hover:to-[#3d49e8]/10 transition-all duration-300">
-              #
-            </span>
-            <span className="text-sm font-medium">{t.name}</span>
-            {t.description && (
-              <span className="text-xs text-text-muted truncate">{t.description}</span>
-            )}
-          </div>
-        ))}
-        {teams.length === 0 && (
-          <div className="text-sm text-text-muted animate-fade-up">No teams yet.</div>
         )}
       </div>
     </div>
