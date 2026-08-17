@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { PermissionGrid } from "./permission-grid";
 import TeamsTab from "./teams-tab";
 
@@ -24,12 +25,12 @@ type Template = {
 
 function BackLink({ label }: { label: string }) {
   return (
-    <a
+    <Link
       href="/"
       className="group inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-normal transition-colors"
     >
       <span className="transition-transform duration-200 group-hover:-translate-x-0.5">←</span> {label}
-    </a>
+    </Link>
   );
 }
 
@@ -241,8 +242,6 @@ function SettingsContent() {
     router.push(`/settings/templates/${id}?org=${orgId}`);
   }
 
-  const canManageRoles = true; // gate at the API; UI hides nothing
-
   return (
     <div className="h-screen flex flex-col bg-bg-primary">
       <header className="frost h-14 shrink-0 flex items-center justify-between px-5 border-b border-border/50 z-10">
@@ -308,7 +307,6 @@ function SettingsContent() {
           {org && tab === "overview" && <OverviewTab key={org.id} org={org} onError={setError} onOrg={setOrg} />}
           {org && tab === "roles" && (
             <RolesTab
-              orgId={org.id}
               roles={roles}
               perms={perms}
               rolePerms={rolePerms}
@@ -438,7 +436,6 @@ function OverviewTab({
 }
 
 function RolesTab({
-  orgId,
   roles,
   perms,
   rolePerms,
@@ -450,7 +447,6 @@ function RolesTab({
   onTogglePermission,
   onDeleteRole,
 }: {
-  orgId: string;
   roles: Role[];
   perms: Perm[];
   rolePerms: Record<string, string[]>;

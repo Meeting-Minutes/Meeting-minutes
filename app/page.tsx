@@ -307,7 +307,7 @@ export default function Home() {
   }, [activeOrgId, activeTeamId]);
 
   useEffect(() => {
-    if (!activeTeamId) { setMeetings([]); return; }
+    if (!activeTeamId) return;
     const params = new URLSearchParams();
     if (searchQuery.trim()) params.set("q", searchQuery.trim());
     if (filterFrom) params.set("from", filterFrom);
@@ -759,7 +759,7 @@ export default function Home() {
                 </div>
 
                 {(() => {
-                  if (meetings.length === 0) {
+                  if (!activeTeamId || meetings.length === 0) {
                     return (
                       <div className="card-hover bg-surface rounded-2xl border border-border/50 p-10 text-center">
                         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent/25 to-success/15 flex items-center justify-center mx-auto mb-4 shadow-[0_8px_24px_-8px_rgba(88,101,242,0.5)]">
