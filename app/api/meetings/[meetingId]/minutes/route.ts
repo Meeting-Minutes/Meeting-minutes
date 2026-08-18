@@ -7,8 +7,6 @@ import {
   templates,
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { readFileSync } from "fs";
-import { resolve } from "path";
 import { getCurrentUser } from "@/lib/auth";
 import {
   hasPermission,
@@ -56,24 +54,20 @@ export async function GET(
     .limit(1);
 
   const templateId = minutesRow?.templateId ?? access.meeting.templateId;
-  let template: { id: string; name: string; fields: unknown; texPath: string | null } | null = null;
-  let templateSource: string | null = null;
+  let template: { id: string; name: string; fields: unknown; texSource: string | null } | null = null;
   if (templateId) {
     const [tmpl] = await db
-      .select({ id: templates.id, name: templates.name, fields: templates.fields, texPath: templates.texPath })
+      .select({ id: templates.id, name: templates.name, fields: templates.fields, texSource: templates.texSource })
       .from(templates)
       .where(eq(templates.id, templateId))
       .limit(1);
     template = tmpl ? { ...tmpl, fields: tmpl.fields ?? [] } : null;
-    if (template?.texPath) {
-      try { templateSource = readFileSync(resolve(template.texPath), "utf-8"); } catch { /* file missing */ }
-    }
   }
 
   return NextResponse.json({
     minutes: minutesRow,
     template,
-    templateSource,
+    templateSource: template?.texSource ?? null,
     content: (minutesRow?.content as Record<string, unknown>) ?? {},
     meetingTitle: access.meeting.title,
   });

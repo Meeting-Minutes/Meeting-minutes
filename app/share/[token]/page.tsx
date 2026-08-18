@@ -1,6 +1,4 @@
 import { notFound } from "next/navigation";
-import { readFileSync } from "fs";
-import { resolve } from "path";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { shares, minutes, meetings, templates } from "@/db/schema";
@@ -65,9 +63,9 @@ export default async function SharePage({
   const title = meeting?.title ?? "Shared minutes";
 
   let bodyHtml: string | null = null;
-  if (template?.texPath) {
+  if (template?.texSource) {
     try {
-      const source = readFileSync(resolve(template.texPath), "utf-8");
+      const source = template.texSource;
       bodyHtml = renderTemplate(source, content)
         .replace(/^[\s\S]*<body[^>]*>/i, "")
         .replace(/<\/body>\s*<\/html>\s*$/i, "");

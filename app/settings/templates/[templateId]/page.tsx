@@ -23,7 +23,6 @@ type TemplateData = {
   name: string;
   description: string;
   fields: Field[];
-  texPath?: string | null;
   templateSource?: string | null;
 };
 
@@ -42,7 +41,6 @@ export default function TemplateEditorPage({
   const [description, setDescription] = useState("");
   const [fields, setFields] = useState<Field[]>([]);
   const [texFile, setTexFile] = useState<File | null>(null);
-  const [existingTexPath, setExistingTexPath] = useState<string | null>(null);
   const [templateSource, setTemplateSource] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -69,7 +67,6 @@ export default function TemplateEditorPage({
           setName(t.name);
           setDescription(t.description ?? "");
           setFields(t.fields ?? []);
-          setExistingTexPath(t.texPath ?? null);
           setTemplateSource(t.templateSource ?? null);
         })
         .catch(() => setError("Failed to load template"));
@@ -326,9 +323,9 @@ export default function TemplateEditorPage({
           {/* --- tex file upload --- */}
           <div className="animate-fade-up card-hover bg-surface border border-border/40 rounded-2xl p-5 flex flex-col gap-3" style={{ animationDelay: "100ms" }}>
             <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">Template File (.hbs or .html)</label>
-            {existingTexPath && (
+            {templateSource && (
               <div className="text-xs text-text-muted">
-                Current file: <code className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary border border-border/50">{existingTexPath.split("/").pop()}</code>
+                Current file attached
               </div>
             )}
             <input

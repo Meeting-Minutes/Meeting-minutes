@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { db } from "../index";
 import {
   organizations,
@@ -88,15 +89,16 @@ async function ensureMember(userId: string, orgId: string, teamId: string | null
 async function createTemplate(
   orgId: string, userId: string, name: string, desc: string, fields: unknown[], texPath: string,
 ) {
+  const texSource = readFileSync(texPath, "utf-8");
   const [t] = await db.select({ id: templates.id, fields: templates.fields }).from(templates).where(eq(templates.name, name)).limit(1);
   if (t) {
     if (!t.fields || (t.fields as unknown[]).length === 0) {
-      await db.update(templates).set({ fields: fields as never }).where(eq(templates.id, t.id));
+      await db.update(templates).set({ fields: fields as never, texSource }).where(eq(templates.id, t.id));
     }
     return t.id;
   }
   const id = randomUUID();
-  await db.insert(templates).values({ id, orgId, name, description: desc, createdBy: userId, fields: fields as never, texPath });
+  await db.insert(templates).values({ id, orgId, name, description: desc, createdBy: userId, fields: fields as never, texSource });
   return id;
 }
 

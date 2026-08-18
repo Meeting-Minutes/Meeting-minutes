@@ -23,6 +23,7 @@ export const templates = pgTable(
     }),
     fields: jsonb("fields").$type<Field[]>().notNull().default([]),
     texPath: text("tex_path"),
+    texSource: text("tex_source"),
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
