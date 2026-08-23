@@ -1,23 +1,45 @@
 @import "tailwindcss";
 
+/* Fonts must stay inline: values reference variables injected by next/font */
 @theme inline {
-  --color-bg-primary: #313338;
-  --color-bg-secondary: #2b2d31;
-  --color-bg-tertiary: #1e1f22;
-  --color-surface: #383a40;
-  --color-surface-hover: #3f4147;
-  --color-bg-input: #1e1f22;
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* Violet-slate dark = default. Utilities emit var() references, so overriding
+   these custom properties under [data-theme="light"] re-skins everything. */
+@theme {
+  --color-bg-primary: #202129;
+  --color-bg-secondary: #1b1c23;
+  --color-bg-tertiary: #15161c;
+  --color-surface: #26272f;
+  --color-surface-hover: #2d2e38;
+  --color-bg-input: #15161c;
   --color-accent: #5865f2;
   --color-accent-hover: #4752c4;
   --color-accent-subtle: #404eed;
-  --color-text-normal: #dbdee1;
-  --color-text-muted: #949ba4;
-  --color-text-link: #00a8fc;
-  --color-border: #3f4147;
-  --color-danger: #da373c;
-  --color-success: #23a55a;
-  --font-sans: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --color-text-normal: #e3e5ec;
+  --color-text-muted: #9298a8;
+  --color-text-link: #7aa5ff;
+  --color-border: #2e3039;
+  --color-danger: #f04a4f;
+  --color-success: #3ba55d;
+}
+
+[data-theme="light"] {
+  --color-bg-primary: #eff0f6;
+  --color-bg-secondary: #fbfbfe;
+  --color-bg-tertiary: #e6e8f1;
+  --color-surface: #ffffff;
+  --color-surface-hover: #edeff7;
+  --color-bg-input: #f3f4fa;
+  --color-accent-hover: #4752c4;
+  --color-text-normal: #1a1d27;
+  --color-text-muted: #5d6373;
+  --color-text-link: #0b6bcf;
+  --color-border: #dbdeea;
+  --color-danger: #d3393f;
+  --color-success: #178a49;
 }
 
 * {
@@ -26,13 +48,22 @@
 
 body {
   background:
-    radial-gradient(1100px 500px at 85% -10%, rgba(88, 101, 242, 0.07), transparent 60%),
-    radial-gradient(900px 450px at 5% 110%, rgba(35, 165, 90, 0.045), transparent 60%),
+    radial-gradient(1100px 500px at 85% -10%, rgba(99, 102, 241, 0.09), transparent 60%),
+    radial-gradient(800px 400px at 12% -5%, rgba(139, 92, 246, 0.06), transparent 65%),
+    radial-gradient(900px 450px at 5% 110%, rgba(59, 165, 93, 0.05), transparent 60%),
     var(--color-bg-primary);
   color: var(--color-text-normal);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme="light"] body {
+  background:
+    radial-gradient(1100px 500px at 85% -10%, rgba(88, 101, 242, 0.13), transparent 60%),
+    radial-gradient(800px 400px at 12% -5%, rgba(139, 92, 246, 0.09), transparent 65%),
+    radial-gradient(900px 450px at 5% 110%, rgba(35, 165, 90, 0.08), transparent 60%),
+    var(--color-bg-primary);
 }
 
 /* ─── motion ─────────────────────────────────────────────────────────── */
@@ -105,12 +136,19 @@ button {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e1f22;
+  background: #15161c;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #3a3f52, #2b2d31);
+  background: linear-gradient(180deg, #3a3d4d, #24262f);
+}
+
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #ccd0de;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #b3b8ca;
 }
 
 input,
@@ -142,9 +180,25 @@ button {
 }
 
 .frost {
-  background: rgba(49, 51, 56, 0.8);
+  background: rgba(32, 33, 41, 0.8);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+[data-theme="light"] .frost {
+  background: rgba(251, 251, 254, 0.78);
+}
+
+/* Active server indicator: white on dark sidebars, dark on light ones */
+[data-theme="light"] .pill {
+  background: #1a1d27;
+}
+
+/* Resting elevation for cards in light mode (hover lift comes from .card-hover) */
+[data-theme="light"] .card-hover:not(:hover) {
+  box-shadow:
+    0 1px 2px rgba(26, 29, 39, 0.05),
+    0 4px 14px -8px rgba(88, 101, 242, 0.1);
 }
 
 /* TipTap rich text editor */

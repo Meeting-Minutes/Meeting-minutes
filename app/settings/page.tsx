@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PermissionGrid } from "./permission-grid";
+import ThemeToggle from "../theme-toggle";
 import TeamsTab from "./teams-tab";
 
 type Org = { id: string; name: string; description?: string | null; slug: string };
@@ -255,15 +256,18 @@ function SettingsContent() {
             Settings
           </span>
         </div>
-        <select
-          value={orgId ?? ""}
-          onChange={(e) => setOrg(orgs.find((o) => o.id === e.target.value) ?? null)}
-          className="bg-bg-input border border-border rounded-lg px-3 py-1.5 text-sm text-text-normal focus:border-accent focus:outline-none hover:border-border transition-colors cursor-pointer"
-        >
-          {orgs.map((o) => (
-            <option key={o.id} value={o.id}>{o.name}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <select
+            value={orgId ?? ""}
+            onChange={(e) => setOrg(orgs.find((o) => o.id === e.target.value) ?? null)}
+            className="bg-bg-input border border-border rounded-lg px-3 py-1.5 text-sm text-text-normal focus:border-accent focus:outline-none hover:border-border transition-colors cursor-pointer"
+          >
+            {orgs.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">

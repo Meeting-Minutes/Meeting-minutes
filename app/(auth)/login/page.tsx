@@ -2,6 +2,7 @@
 
 import { useActionState, useRef } from "react";
 import { login } from "./actions";
+import ThemeToggle from "../../theme-toggle";
 
 const DEMO_ACCOUNTS = [
   { email: "admin@pcampus.edu.np", label: "Admin — PCampus & Riverside" },
@@ -21,7 +22,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-bg-tertiary px-4">
+    <div className="relative flex items-center justify-center min-h-screen bg-bg-tertiary px-4">
+      <div className="absolute top-5 right-5">
+        <ThemeToggle />
+      </div>
       <div className="animate-pop-in bg-bg-primary w-full max-w-sm p-8 rounded-2xl shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)] border border-border/40">
         <div className="text-center mb-6">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent/30 to-success/15 flex items-center justify-center mx-auto mb-4 shadow-[0_8px_24px_-8px_rgba(88,101,242,0.6)]">

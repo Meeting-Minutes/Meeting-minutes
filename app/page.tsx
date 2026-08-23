@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import ThemeToggle from "./theme-toggle";
 
 type Org = { id: string; name: string; description?: string | null; slug: string };
 type Team = { id: string; name: string; description?: string | null };
@@ -592,6 +593,7 @@ export default function Home() {
               <p className="text-sm font-medium text-text-normal truncate leading-tight">{user.name}</p>
               <p className="text-[11px] text-text-muted truncate leading-tight">{user.email}</p>
             </div>
+            <ThemeToggle />
             <button
               onClick={logout}
               title="Sign out"
