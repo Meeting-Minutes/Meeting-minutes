@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import ThemeToggle from "./theme-toggle";
 import DualDateInput from "./dual-date-input";
 import { useMyPermissions } from "./use-my-permissions";
 
 type Org = { id: string; name: string; description?: string | null; slug: string };
 type Team = { id: string; name: string; description?: string | null };
-type User = { id: string; email: string; name: string };
+type User = { id: string; email: string; name: string; title?: string | null; post?: string | null };
 type Member = { id: string; userId: string; teamId: string | null; createdAt: string; user: User };
 type Meeting = {
   id: string;
@@ -171,7 +172,7 @@ function MembersSection({
 
 function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolean }) {
   return (
-    <a
+    <Link
       href={`/meetings/${meeting.id}`}
       className={`group card-hover bg-surface rounded-xl border border-border/50 p-4 flex items-start gap-4 block ${!upcoming ? "opacity-70 hover:opacity-95" : ""}`}
     >
@@ -188,7 +189,7 @@ function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolea
         </span>
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-text-normal group-hover:text-white transition-colors">{meeting.title}</p>
+        <p className="text-sm font-semibold text-text-normal group-hover:text-accent transition-colors">{meeting.title}</p>
         {meeting.description && (
           <p className="text-xs text-text-muted mt-0.5 leading-relaxed line-clamp-2">{meeting.description}</p>
         )}
@@ -241,7 +242,7 @@ function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolea
       >
         <path d="M3 8h10M9 4l4 4-4 4" />
       </svg>
-    </a>
+    </Link>
   );
 }
 
@@ -253,6 +254,12 @@ export default function Home() {
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [activeTeamId, setActiveTeamId] = useState<string | null>(null);
   const [showOrgMenu, setShowOrgMenu] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileTitle, setProfileTitle] = useState("");
+  const [profilePost, setProfilePost] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [showNewOrg, setShowNewOrg] = useState(false);
   const [showNewTeam, setShowNewTeam] = useState(false);
@@ -288,7 +295,7 @@ export default function Home() {
 
   // UI-only permission gate — the API enforces the real checks; this just
   // hides controls the user has no key for.
-  const { can } = useMyPermissions(activeOrgId);
+  const { can, refresh: refreshPerms } = useMyPermissions(activeOrgId);
   const canManageTeams = can("manage_teams");
   const canSchedule = can("create_meeting", activeTeamId);
 
@@ -397,6 +404,7 @@ export default function Home() {
     setActiveOrgId(org.id);
     setActiveTeamId(null);
     setShowNewOrg(false);
+    refreshPerms();
   }
 
   async function updateOrg(values: Record<string, string>) {
@@ -432,6 +440,7 @@ export default function Home() {
     setTeams((prev) => [...prev, team]);
     setActiveTeamId(team.id);
     setShowNewTeam(false);
+    refreshPerms();
   }
 
   async function updateTeam(values: Record<string, string>) {
@@ -462,8 +471,18 @@ export default function Home() {
       const d = await res.json().catch(() => ({}));
       setMemberError(d.error || "Failed to add member"); return;
     }
+    const d = await res.json().catch(() => ({}));
     setAddEmail("");
+    setShowAddMember(false);
     fetchMembers(activeOrgId, activeTeamId ?? undefined);
+    refreshPerms();
+    if (d.invited && d.invited.length > 0) {
+      window.alert(
+        `${d.invited[0].email} has no account yet — share this join link:\n${window.location.origin}/join/${d.invited[0].token}`,
+      );
+    } else if (Array.isArray(d.alreadyMembers) && d.alreadyMembers.length > 0) {
+      setMemberError(`${d.alreadyMembers[0]} is already a member`);
+    }
   }
 
   async function removeMember(userId: string, teamId: string | null) {
@@ -472,7 +491,10 @@ export default function Home() {
       method: "DELETE", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId, teamId }),
     });
-    if (res.ok) fetchMembers(activeOrgId, activeTeamId ?? undefined);
+    if (res.ok) {
+      fetchMembers(activeOrgId, activeTeamId ?? undefined);
+      refreshPerms();
+    }
   }
 
   async function scheduleMeeting() {
@@ -521,6 +543,37 @@ export default function Home() {
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
+  }
+
+  function openProfileEditor() {
+    if (!user) return;
+    setProfileName(user.name);
+    setProfileTitle(user.title ?? "");
+    setProfilePost(user.post ?? "");
+    setShowProfileMenu(false);
+    setShowProfile(true);
+  }
+
+  async function saveProfile() {
+    if (!profileName.trim() || profileSaving) return;
+    setProfileSaving(true);
+    try {
+      const res = await fetch("/api/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: profileName, title: profileTitle, post: profilePost }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(d.error || "Failed to save profile");
+        return;
+      }
+      setUser((u) => (u ? { ...u, ...d.user } : u));
+      setShowProfile(false);
+      setError("");
+    } finally {
+      setProfileSaving(false);
+    }
   }
 
   const activeOrg = orgs.find((o) => o.id === activeOrgId);
@@ -656,13 +709,13 @@ export default function Home() {
             <div className="px-2 mt-2">
               <p className="text-[10px] font-semibold text-text-muted uppercase tracking-widest mb-1.5 px-2">Recent</p>
               {feed.recent.slice(0, 4).map((m) => (
-                <a
+                <Link
                   key={m.id}
                   href={`/meetings/${m.id}`}
                   className="block px-2 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-normal hover:bg-surface/50 transition-colors truncate"
                 >
                   {m.title}
-                </a>
+                </Link>
               ))}
               {feed.recent.length === 0 && (
                 <p className="text-xs text-text-muted px-2">Meetings will appear here.</p>
@@ -686,13 +739,34 @@ export default function Home() {
               <p className="text-[11px] text-text-muted truncate leading-tight">{user.email}</p>
             </div>
             <ThemeToggle />
-            <button
-              onClick={logout}
-              title="Sign out"
-              className="text-text-muted hover:text-danger hover:bg-danger/10 transition-all text-lg leading-none px-1.5 py-1 rounded-md"
-            >
-              ⏻
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowProfileMenu((v) => !v)}
+                title="Account options"
+                className="text-text-muted hover:text-text-normal hover:bg-surface/60 transition-all text-lg leading-none px-1.5 py-1 rounded-md"
+              >
+                ⋯
+              </button>
+              {showProfileMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                  <div className="absolute right-0 bottom-full mb-2 z-50 w-44 bg-bg-tertiary rounded-lg border border-border/50 shadow-xl py-1.5 animate-pop-in origin-bottom-right">
+                    <button
+                      onClick={openProfileEditor}
+                      className="w-full text-left px-3 py-1.5 text-sm text-text-normal hover:bg-surface/60 transition-colors"
+                    >
+                      ✏️ Edit profile
+                    </button>
+                    <button
+                      onClick={logout}
+                      className="w-full text-left px-3 py-1.5 text-sm text-danger hover:bg-danger/10 transition-colors"
+                    >
+                      ⏻ Log out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
       </aside>
@@ -1033,7 +1107,7 @@ export default function Home() {
                       </h1>
                       <p className="text-sm text-text-muted mt-1">{today}</p>
                       {feed.upcoming[0] && (
-                        <a href={`/meetings/${feed.upcoming[0].id}`} className="group inline-flex items-center gap-2 mt-3 text-sm text-text-muted hover:text-text-normal transition-colors">
+                        <Link href={`/meetings/${feed.upcoming[0].id}`} className="group inline-flex items-center gap-2 mt-3 text-sm text-text-muted hover:text-text-normal transition-colors">
                           <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse shrink-0" />
                           <span className="truncate">
                             Next: {feed.upcoming[0].title} ·{" "}
@@ -1043,7 +1117,7 @@ export default function Home() {
                           <svg className="w-3.5 h-3.5 opacity-0 -translate-x-0.5 group-hover:opacity-100 group-hover:translate-x-0 transition-all" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                             <path d="M3 8h10M9 4l4 4-4 4" />
                           </svg>
-                        </a>
+                        </Link>
                       )}
                     </header>
                     {/* Organizations */}
@@ -1380,6 +1454,63 @@ export default function Home() {
                 className="btn-primary px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
               >
                 {scheduling ? "Scheduling\u2026" : "Schedule"}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {showProfile && (
+        <ModalOverlay onClose={() => setShowProfile(false)}>
+          <div className="animate-pop-in bg-bg-primary rounded-xl p-6 w-100 shadow-2xl border border-border/50">
+            <h2 className="text-[17px] font-semibold text-text-normal mb-5">Edit profile</h2>
+            <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">Email</label>
+            <input value={user?.email ?? ""} disabled className="w-full px-3.5 py-2.5 text-sm mb-4 opacity-60 cursor-not-allowed" />
+            <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">Full name</label>
+            <input
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              maxLength={120}
+              className="w-full px-3.5 py-2.5 text-sm mb-4"
+              autoFocus
+            />
+            <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">Title (Mr., Dr., …)</label>
+            <input
+              value={profileTitle}
+              onChange={(e) => setProfileTitle(e.target.value)}
+              list="honorifics"
+              maxLength={30}
+              placeholder="Optional"
+              className="w-full px-3.5 py-2.5 text-sm mb-4"
+            />
+            <datalist id="honorifics">
+              {["Mr.", "Mrs.", "Ms.", "Dr.", "Prof.", "Er.", "Hon."].map((h) => (
+                <option key={h} value={h} />
+              ))}
+            </datalist>
+            <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">Post / designation</label>
+            <input
+              value={profilePost}
+              onChange={(e) => setProfilePost(e.target.value)}
+              maxLength={120}
+              placeholder="Optional — e.g. Campus Chief"
+              className="w-full px-3.5 py-2.5 text-sm mb-5"
+            />
+            <p className="text-xs text-text-muted mb-4 -mt-1">Shown across your organizations; not rendered into minutes yet.</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowProfile(false)}
+                disabled={profileSaving}
+                className="px-4 py-2 text-sm text-text-muted hover:text-text-normal transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveProfile}
+                disabled={profileSaving || !profileName.trim()}
+                className="btn-primary px-5 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+              >
+                {profileSaving ? "Saving\u2026" : "Save"}
               </button>
             </div>
           </div>

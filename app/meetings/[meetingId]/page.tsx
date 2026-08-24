@@ -23,6 +23,7 @@ export default function MeetingDetailPage() {
   const [meeting, setMeeting] = useState<{
     id: string; orgId: string; title: string; description: string | null;
     scheduledAt: string;
+    teamIds?: string[];
   } | null>(null);
   const [template, setTemplate] = useState<{ id: string; name: string; fields: Field[] } | null>(null);
   const [templateSource, setTemplateSource] = useState<string | null>(null);
@@ -31,6 +32,9 @@ export default function MeetingDetailPage() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<{ user: { name: string }; roleName: string | null; postRole?: string | null }[]>([]);
+  const [minutesExists, setMinutesExists] = useState(false);
+  const [orgTemplates, setOrgTemplates] = useState<{ id: string; name: string }[]>([]);
 
   const [shareOpen, setShareOpen] = useState(false);
   const [shareEmails, setShareEmails] = useState("");
@@ -55,6 +59,41 @@ export default function MeetingDetailPage() {
       .catch(() => setError("Failed to load meeting"));
   }, [meetingId]);
 
+  // The meeting's team's members — one-click source for attendance tables.
+  const orgId = meeting?.orgId;
+  const firstTeamId = meeting?.teamIds?.[0];
+  useEffect(() => {
+    if (!orgId) return;
+    const url = `/api/organizations/${orgId}/members`;
+    if (!firstTeamId) {
+      // No team → org-wide roster is the whole list.
+      fetch(url)
+        .then((r) => (r.ok ? r.json() : []))
+        .then(setTeamMembers)
+        .catch(() => {});
+      return;
+    }
+    // Team meeting: team members + org-wide members (secretary etc.), team
+    // role winning when a user holds both.
+    Promise.all([
+      fetch(`${url}?teamId=${firstTeamId}`).then((r) => (r.ok ? r.json() : [])),
+      fetch(url).then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([teamRows, allRows]) => {
+        // समिति पद only comes from a role held in THIS meeting's team;
+        // org-wide roles (Admin/Secretary) are access levels, not posts.
+        const byUser = new Map<string, { user: { name: string }; roleName: string | null; postRole: string | null }>();
+        for (const row of allRows) byUser.set(row.userId, { user: row.user, roleName: row.roleName, postRole: null });
+        for (const row of teamRows) {
+          const entry = byUser.get(row.userId);
+          if (entry) entry.postRole = row.roleName;
+          else byUser.set(row.userId, { user: row.user, roleName: row.roleName, postRole: row.roleName });
+        }
+        setTeamMembers([...byUser.values()]);
+      })
+      .catch(() => {});
+  }, [orgId, firstTeamId]);
+
   useEffect(() => {
     fetch(`/api/meetings/${meetingId}/minutes`)
       .then((r) => (r.ok ? r.json() : null))
@@ -64,12 +103,69 @@ export default function MeetingDetailPage() {
         setTemplateSource(d.templateSource);
         setContent(d.content ?? {});
         setStatus(d.minutes?.status ?? "draft");
+        setMinutesExists(!!d.minutes);
       })
       .catch(() => setError("Failed to load minutes"));
   }, [meetingId]);
 
+  // Freeform meeting: offer the org's templates so one can be attached after
+  // scheduling. Only until minutes exist (the API enforces the same window).
+  useEffect(() => {
+    if (!orgId || template || minutesExists || !canEdit) return;
+    fetch(`/api/organizations/${orgId}/templates`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setOrgTemplates)
+      .catch(() => {});
+  }, [orgId, template, minutesExists, canEdit]);
+
+  async function chooseTemplate(templateId: string) {
+    setError("");
+    const res = await fetch(`/api/meetings/${meetingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "Failed to attach template");
+      return;
+    }
+    const d = await fetch(`/api/meetings/${meetingId}/minutes`).then((r) => (r.ok ? r.json() : null));
+    if (d) {
+      setTemplate(d.template);
+      setTemplateSource(d.templateSource);
+      setContent(d.content ?? {});
+      setStatus(d.minutes?.status ?? "draft");
+      setMinutesExists(!!d.minutes);
+    }
+  }
+
   function setField(name: string, value: unknown) {
     setContent((prev) => ({ ...prev, [name]: value }));
+  }
+
+  // One-click attendance: append a row per team member, skipping names that
+  // are already listed.
+  function addTeamMembersToField(fieldName: string, columns: { key: string; label: string }[]) {
+    const rows = Array.isArray(content[fieldName]) ? (content[fieldName] as Record<string, string>[]) : [];
+    const existing = new Set(
+      rows.map((r) => (r.name ?? "").trim().toLowerCase()).filter(Boolean),
+    );
+    const additions = teamMembers
+      .filter((m) => !existing.has(m.user.name.trim().toLowerCase()))
+      .map((m) => {
+        const row: Record<string, string> = {};
+        for (const col of columns) {
+          row[col.key] =
+            col.key === "name"
+              ? m.user.name
+              : col.key === "post"
+                ? (m.postRole ?? "")
+                : "";
+        }
+        return row;
+      });
+    if (additions.length > 0) setField(fieldName, [...rows, ...additions]);
   }
 
   async function save() {
@@ -331,7 +427,28 @@ export default function MeetingDetailPage() {
           </div>
 
           {!template ? (
-            <div className="text-sm text-text-muted">This meeting has no template.</div>
+            canEdit && !minutesExists ? (
+              <div className="animate-fade-up card-hover bg-surface/50 border border-border/40 rounded-xl p-4">
+                <p className="text-sm font-medium text-text-normal mb-2.5">Pick a template to start the minutes</p>
+                {orgTemplates.length > 0 ? (
+                  <div className="flex gap-2 flex-wrap">
+                    {orgTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => chooseTemplate(t.id)}
+                        className="px-3 py-1.5 text-sm rounded-lg bg-bg-input border border-border hover:border-accent hover:text-accent transition-colors"
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-text-muted">No templates in this organization yet — create one in Settings → Templates.</p>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm text-text-muted">This meeting has no template.</div>
+            )
           ) : template.fields.length === 0 ? (
             <div className="text-sm text-text-muted">This template has no fields defined.</div>
           ) : (
@@ -343,7 +460,19 @@ export default function MeetingDetailPage() {
                   <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
                     {field.label}
                   </label>
-                  <FieldInput field={field} value={content[field.name]} onChange={(v) => setField(field.name, v)} />
+                  <FieldInput
+                    field={field}
+                    value={content[field.name]}
+                    onChange={(v) => setField(field.name, v)}
+                    onAddTeamMembers={
+                      canEdit &&
+                      field.type === "table" &&
+                      field.config.columns.some((c) => c.key === "name") &&
+                      teamMembers.length > 0
+                        ? () => addTeamMembersToField(field.name, field.config.columns)
+                        : undefined
+                    }
+                  />
                 </div>
               ))}
             </fieldset>
@@ -358,10 +487,12 @@ function FieldInput({
   field,
   value,
   onChange,
+  onAddTeamMembers,
 }: {
   field: Field;
   value: unknown;
   onChange: (v: unknown) => void;
+  onAddTeamMembers?: () => void;
 }) {
   const inputClass = "bg-bg-input border border-border rounded px-2 py-1.5 text-sm focus:border-accent focus:outline-none";
 
@@ -410,16 +541,27 @@ function FieldInput({
               <button onClick={() => onChange(rows.filter((_, i) => i !== ri))} className="text-text-muted hover:text-danger text-sm px-1">✕</button>
             </div>
           ))}
-          <button
-            onClick={() => {
-              const newRow: Record<string, string> = {};
-              for (const col of columns) newRow[col.key] = "";
-              onChange([...rows, newRow]);
-            }}
-            className="self-start text-sm text-text-muted hover:text-text-normal"
-          >
-            + Add row
-          </button>
+          <div className="flex gap-3">
+            {onAddTeamMembers && (
+              <button
+                onClick={onAddTeamMembers}
+                className="self-start text-sm text-accent hover:text-accent-hover transition-colors"
+                title="Add every member of this meeting's team as a row"
+              >
+                + Add team members
+              </button>
+            )}
+            <button
+              onClick={() => {
+                const newRow: Record<string, string> = {};
+                for (const col of columns) newRow[col.key] = "";
+                onChange([...rows, newRow]);
+              }}
+              className="self-start text-sm text-text-muted hover:text-text-normal"
+            >
+              + Add row
+            </button>
+          </div>
         </div>
       );
     }

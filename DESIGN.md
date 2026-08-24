@@ -250,6 +250,22 @@ TODO: audit log
 
 The public page `GET /share/[token]` resolves the token → minute and renders it read-only (same `lib/render-pdf.ts` path as Preview) with **no auth and no org navigation**. Creating or revoking a share is gated on the `export_minutes` permission (closest catalog entry to "get minutes out" — no new permission added, per the §8 catalog-growth stance). Shares of a minute are deleted with the minute.
 
+**`invitations`** — join links for adding members; accounts are always self-created, admins never set passwords
+| column | type | notes |
+|---|---|---|
+| id | uuid PK | |
+| organization_id | uuid FK → organizations, `cascade` on delete | |
+| team_id | uuid FK → teams, `cascade` on delete, **nullable** | null = org-wide invite |
+| role_id | uuid FK → roles, `set null` on delete, **nullable** | |
+| email | text, **nullable** | null = open link (multi-use until revoked); set = targeted (single-use, bound to this address) |
+| token | text unique | random 24-byte base64url — the token IS the invite |
+| expires_at | timestamp not null | 7 days from creation (`INVITE_TTL_DAYS`) |
+| created_by | uuid FK → users, `cascade` on delete | |
+| created_at | timestamp default now() | |
+| accepted_at | timestamp, **nullable** | set when a targeted invite is redeemed; open links stay null |
+
+Adding members goes through one resolver (`lib/invitations.ts` `resolveInviteTargets`): a known user gets a `memberships` row directly (`on conflict do nothing`), an unknown email gets an invitation row instead — no `users` row is created. Join links are emailed when SMTP is configured and returned to the UI for copying otherwise. Redemption is `POST /api/join/[token]` → `/join/[token]` page (signup/login first if logged out); targeted invites are only redeemable by their email's account. Managing invites requires `manage_members` (team-scoped when the invite targets a team). Revoking deletes the row.
+
 ---
 
 ## 3. Multi-org / multi-team membership

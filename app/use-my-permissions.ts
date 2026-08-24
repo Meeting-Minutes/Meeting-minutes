@@ -18,6 +18,7 @@ export function useMyPermissions(orgId: string | null | undefined) {
     orgKeys: new Set(),
     teamKeys: {},
   });
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     if (!orgId) return;
@@ -40,7 +41,12 @@ export function useMyPermissions(orgId: string | null | undefined) {
     return () => {
       alive = false;
     };
-  }, [orgId]);
+  }, [orgId, version]);
+
+  // Call after any action that can change who holds which role (creating
+  // teams, adding/removing members, editing roles) — otherwise newly created
+  // teams and self-permission changes leave stale hidden controls.
+  const refresh = useCallback(() => setVersion((v) => v + 1), []);
 
   const can = useCallback(
     (key: string, teamId?: string | null) => {
@@ -53,5 +59,5 @@ export function useMyPermissions(orgId: string | null | undefined) {
 
   const ready = state.orgId === orgId && !!orgId;
 
-  return { ready, can };
+  return { ready, can, refresh };
 }

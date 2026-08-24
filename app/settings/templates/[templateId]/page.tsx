@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
+import Link from "next/link";
 import { useMyPermissions } from "@/app/use-my-permissions";
 
 const FIELD_TYPES = [
@@ -145,12 +146,12 @@ export default function TemplateEditorPage({
   return (
     <div className="h-screen flex flex-col bg-bg-primary">
       <header className="frost h-14 shrink-0 flex items-center gap-3 px-5 border-b border-border/50 z-10">
-        <a
+        <Link
           href={`/settings?org=${orgId}&tab=templates`}
           className="group text-sm text-text-muted hover:text-text-normal transition-colors"
         >
           <span className="inline-block transition-transform duration-200 group-hover:-translate-x-0.5">←</span> Templates
-        </a>
+        </Link>
         <span className="text-text-muted/50">/</span>
         <span className="flex items-center gap-2 text-sm font-semibold">
           <span className="w-5 h-5 rounded-md bg-gradient-to-br from-[#6b76ff] to-[#3d49e8] flex items-center justify-center text-white text-[10px] shadow-[0_4px_14px_-4px_rgba(88,101,242,0.7)]">

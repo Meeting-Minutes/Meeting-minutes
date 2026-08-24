@@ -245,14 +245,22 @@ export default function TeamsTab({
   async function addTeamMember() {
     if (!team || !addEmail.trim()) return;
     try {
-      await fetchJson(`/api/organizations/${orgId}/members`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: addEmail.trim(), teamId: team.id, roleId: addRoleId || null }),
-      });
+      const d = (await fetchJson(
+        `/api/organizations/${orgId}/members`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: addEmail.trim(), teamId: team.id, roleId: addRoleId || null }),
+        },
+      )) as { invited?: { email: string; token: string }[] };
       setAddEmail("");
       setAddRoleId("");
       await load(team.id);
+      if (d.invited && d.invited.length > 0) {
+        window.alert(
+          `${d.invited[0].email} has no account yet — share this join link:\n${window.location.origin}/join/${d.invited[0].token}`,
+        );
+      }
     } catch (e) {
       onError((e as Error).message);
     }

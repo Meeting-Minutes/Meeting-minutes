@@ -3,6 +3,7 @@ import nodemailer from "nodemailer";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { memberships, users } from "@/db/schema";
+import { INVITE_TTL_DAYS, inviteUrl } from "@/lib/invitations";
 
 export function emailConfigured(): boolean {
   return Boolean(process.env.SMTP_HOST);
@@ -49,4 +50,26 @@ export async function sendEmail(opts: {
     subject: opts.subject,
     text: opts.text,
   });
+}
+
+/** Best-effort email of join links; returns per-email errors. */
+export async function emailInviteLinks(
+  orgName: string,
+  invited: { email: string; token: string }[],
+): Promise<{ emailed: string[]; emailErrors: { email: string; error: string }[] }> {
+  const emailed: string[] = [];
+  const emailErrors: { email: string; error: string }[] = [];
+  for (const { email, token } of invited) {
+    try {
+      await sendEmail({
+        to: email,
+        subject: `Join ${orgName}`,
+        text: `You've been invited to ${orgName}. Create your account or sign in with your existing one:\n\n${inviteUrl(token)}\n\nThe link expires in ${INVITE_TTL_DAYS} days.`,
+      });
+      emailed.push(email);
+    } catch (e) {
+      emailErrors.push({ email, error: (e as Error).message });
+    }
+  }
+  return { emailed, emailErrors };
 }

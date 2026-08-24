@@ -1,6 +1,6 @@
 # Minutes Management System
 
-> Status: **Working prototype.** Core flows — orgs, teams, custom roles & permissions, template-based minutes, PDF export, bulk account invites over SMTP, and Google-Drive-style sharing — are implemented. See [Roadmap](#roadmap) for what's still planned.
+> Status: **Working prototype.** Core flows — orgs, teams, custom roles & permissions, template-based minutes, PDF export, member invites via join links, and Google-Drive-style sharing — are implemented. See [Roadmap](#roadmap) for what's still planned.
 
 A template-based meeting minutes management system for **any organization made of departments, committees, or teams** — universities, companies, NGOs, government offices. It replaces ad-hoc minute-taking (scattered docs, manual emailing, no searchable history) with a structured, permission-aware system that still leaves room for minutes that don't fit any template.
 
@@ -62,7 +62,7 @@ Visit `http://localhost:3000`.
 
 ### Outbound email (optional)
 
-SMTP is only needed for **email invites** (bulk-adding accounts) and **share-by-email** links. Without it both features still work — the new-account passwords and share links are shown in the UI instead of being emailed.
+SMTP is only needed for **email invites** (adding members) and **share-by-email** links. Without it both features still work — join links and share links are shown in the UI for you to copy instead of being emailed.
 
 ```bash
 # .env
@@ -97,7 +97,7 @@ Generated migration files (`db/migrations/`) are committed to git — they're th
 | `bun drizzle-kit studio`   | Open Drizzle Studio to browse the DB                             |
 | `bun run db:check`         | Sanity-check the DB connection (insert/select/delete round trip) |
 | `bun run db:check:clustering` | Verify the clustering indexes exist and the tag-overlap join is index-driven |
-| `bun run db:check:shares`  | Verify share tokens resolve, cascade-delete, and bulk-add/reuse user logic |
+| `bun run db:check:shares`  | Verify share tokens resolve, cascade-delete, and member add/invite logic |
 | `bun run db:seed`          | Seed the demo: two orgs, nested teams, org-wide + team-scoped roles, the Nepali committee template & minutes |
 
 ### Day-to-day operations (for a non-specialist admin)
@@ -199,7 +199,7 @@ On top of scope, search supports **filters**:
 12. **Multi-language support** as a first-class, per-deployment-configurable data model concern — not an English-only system with translation added later.
 13. **Agenda generator** — turns rough/informal input into a grammatically correct, properly structured agenda in the organization's configured language(s).
 14. **Scoped search with filters** — search boundary depends on the searcher's role (entire system vs. own committee), with filtering by attendees and time frame.
-15. **Bulk account add + email invites** — paste a list of emails to create accounts (auto-generated passwords), add them as org members in one request, and optionally email credentials over SMTP.
+15. **Bulk member invites** — paste a list of emails to add members in one request; people with accounts join directly, everyone else receives a single-use join link (emailed over SMTP when configured, otherwise shown for copying). Accounts are always self-created.
 16. **Share minutes outside the organization** — Google-Drive-style read-only links: share by email (recipient gets the link) or "anyone with the link", each revocable.
 
 ## Non-Functional Requirements

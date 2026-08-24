@@ -26,18 +26,19 @@
   --color-success: #3ba55d;
 }
 
+/* Warm cream light theme — soft paper tones, never stark white. */
 [data-theme="light"] {
-  --color-bg-primary: #eff0f6;
-  --color-bg-secondary: #fbfbfe;
-  --color-bg-tertiary: #e6e8f1;
-  --color-surface: #ffffff;
-  --color-surface-hover: #edeff7;
-  --color-bg-input: #f3f4fa;
+  --color-bg-primary: #f4efe3;
+  --color-bg-secondary: #faf6ec;
+  --color-bg-tertiary: #ece5d2;
+  --color-surface: #fffdf6;
+  --color-surface-hover: #f0e9d8;
+  --color-bg-input: #f7f2e4;
   --color-accent-hover: #4752c4;
-  --color-text-normal: #1a1d27;
-  --color-text-muted: #5d6373;
+  --color-text-normal: #262218;
+  --color-text-muted: #6f685a;
   --color-text-link: #0b6bcf;
-  --color-border: #dbdeea;
+  --color-border: #ddd4bd;
   --color-danger: #d3393f;
   --color-success: #178a49;
 }
@@ -60,9 +61,9 @@ body {
 
 [data-theme="light"] body {
   background:
-    radial-gradient(1100px 500px at 85% -10%, rgba(88, 101, 242, 0.13), transparent 60%),
-    radial-gradient(800px 400px at 12% -5%, rgba(139, 92, 246, 0.09), transparent 65%),
-    radial-gradient(900px 450px at 5% 110%, rgba(35, 165, 90, 0.08), transparent 60%),
+    radial-gradient(1100px 500px at 85% -10%, rgba(217, 164, 65, 0.1), transparent 60%),
+    radial-gradient(800px 400px at 12% -5%, rgba(88, 101, 242, 0.07), transparent 65%),
+    radial-gradient(900px 450px at 5% 110%, rgba(35, 165, 90, 0.07), transparent 60%),
     var(--color-bg-primary);
 }
 
@@ -145,10 +146,10 @@ button {
 }
 
 [data-theme="light"] ::-webkit-scrollbar-thumb {
-  background: #ccd0de;
+  background: #d6cdb4;
 }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
-  background: #b3b8ca;
+  background: #c2b796;
 }
 
 input,
@@ -186,12 +187,12 @@ button {
 }
 
 [data-theme="light"] .frost {
-  background: rgba(251, 251, 254, 0.78);
+  background: rgba(250, 246, 236, 0.8);
 }
 
 /* Active server indicator: white on dark sidebars, dark on light ones */
 [data-theme="light"] .pill {
-  background: #1a1d27;
+  background: #262218;
 }
 
 /* Resting elevation for cards in light mode (hover lift comes from .card-hover) */

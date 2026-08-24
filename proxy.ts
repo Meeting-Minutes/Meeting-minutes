@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { decrypt } from "@/lib/session";
 
-const publicRoutes = ["/login", "/signup", "/share"];
+const publicRoutes = ["/login", "/signup", "/share", "/join"];
 
 export default async function proxy(req: NextRequest) {
   const path = req.nextUrl.pathname;
@@ -12,7 +12,8 @@ export default async function proxy(req: NextRequest) {
   const payload = await decrypt(sessionCookie);
 
   if (!isPublic && !payload?.userId) {
-    return NextResponse.redirect(new URL("/login", req.nextUrl));
+    const next = encodeURIComponent(path + req.nextUrl.search);
+    return NextResponse.redirect(new URL(`/login?next=${next}`, req.nextUrl));
   }
 
   if (isPublic && payload?.userId && path === "/login") {
