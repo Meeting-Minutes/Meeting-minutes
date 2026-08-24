@@ -34,7 +34,7 @@ export async function sendEmail(opts: {
 }): Promise<void> {
   const host = process.env.SMTP_HOST;
   if (!host) throw new Error("SMTP not configured (set SMTP_HOST)");
-  const port = Number(process.env.SMTP_PORT ?? 587);
+  const port = Number(process.env.SMTP_PORT || 587);
   const auth = process.env.SMTP_USER
     ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS ?? "" }
     : undefined;
@@ -44,7 +44,10 @@ export async function sendEmail(opts: {
       : { host, port, secure: false, auth },
   );
   await transport.sendMail({
-    from: process.env.SMTP_FROM ?? `no-reply@${host}`,
+    // Authenticated relays (Gmail, SES) reject a From they don't own, so the
+    // login address is a better default than a synthetic no-reply@<host>.
+    // `||` not `??`: blank env vars are "" and must fall through.
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || `no-reply@${host}`,
     to: opts.to,
     subject: opts.subject,
     text: opts.text,
