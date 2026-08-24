@@ -7,6 +7,9 @@ import { redirect } from "next/navigation";
 export async function login(_prev: unknown, formData: FormData) {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  // Only relative paths — never redirect off-site via ?next=.
+  const nextRaw = formData.get("next");
+  const next = typeof nextRaw === "string" && nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/";
 
   if (!email || !password) {
     return { error: "Email and password are required" };
@@ -18,5 +21,5 @@ export async function login(_prev: unknown, formData: FormData) {
   }
 
   await createSession(user.id);
-  redirect("/");
+  redirect(next);
 }

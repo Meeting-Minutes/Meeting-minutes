@@ -1,35 +1,16 @@
 import { NextResponse } from "next/server";
-import { randomBytes } from "node:crypto";
 import { db } from "@/db";
-import { memberships, users, roles, organizations } from "@/db/schema";
-import { eq, and, isNull, inArray } from "drizzle-orm";
-import { getCurrentUser, createUser } from "@/lib/auth";
-import { sendEmail, appUrl } from "@/lib/email";
+import { memberships, users, organizations, roles } from "@/db/schema";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
+import { getCurrentUser } from "@/lib/auth";
 import {
-  isRoleScopeValid,
   resolveTeamAccess,
   resolveOrganizationAccess,
   hasPermission,
+  validateRole,
 } from "@/lib/permissions";
-async function validateRole(
-  orgId: string,
-  teamId: string | null | undefined,
-  roleId: string | null | undefined,
-): Promise<{ roleId: string | null } | { error: string; status: number }> {
-  if (!roleId) return { roleId: null };
-  const [role] = await db
-    .select()
-    .from(roles)
-    .where(eq(roles.id, roleId))
-    .limit(1);
-  if (!role) return { error: "Role not found", status: 404 };
-  if (role.orgId !== orgId) return { error: "Role does not belong to this org", status: 400 };
-  const membershipTeamId = teamId || null;
-  if (!isRoleScopeValid(role.teamId, membershipTeamId)) {
-    return { error: "Role scope does not match the membership's team", status: 400 };
-  }
-  return { roleId };
-}
+import { resolveInviteTargets } from "@/lib/invitations";
+import { emailInviteLinks } from "@/lib/email";
 
 export async function GET(
   _req: Request,
@@ -56,9 +37,11 @@ export async function GET(
         teamId: memberships.teamId,
         createdAt: memberships.createdAt,
         user: { id: users.id, email: users.email, name: users.name },
+        roleName: roles.name,
       })
       .from(memberships)
       .innerJoin(users, eq(memberships.userId, users.id))
+      .leftJoin(roles, eq(memberships.roleId, roles.id))
       .where(and(eq(memberships.organizationId, orgId), eq(memberships.teamId, teamId)))
       .orderBy(users.name);
     return NextResponse.json(rows);
@@ -75,9 +58,11 @@ export async function GET(
       teamId: memberships.teamId,
       createdAt: memberships.createdAt,
       user: { id: users.id, email: users.email, name: users.name },
+      roleName: roles.name,
     })
     .from(memberships)
     .innerJoin(users, eq(memberships.userId, users.id))
+    .leftJoin(roles, eq(memberships.roleId, roles.id))
     .where(
       access.orgWide
         ? eq(memberships.organizationId, orgId)
@@ -86,7 +71,9 @@ export async function GET(
           inArray(memberships.teamId, access.teamIds),
         ),
     )
-    .orderBy(memberships.userId);
+    // Org-wide row wins for multi-membership users so the collapsed view
+    // shows their base role, not an arbitrary team role.
+    .orderBy(memberships.userId, sql`${memberships.teamId} nulls first`);
 
   return NextResponse.json(rows);
 }
@@ -105,7 +92,11 @@ export async function POST(
     teamId?: string | null;
     roleId?: string | null;
   };
-  const emails: { email: string; name?: string }[] | undefined = body.emails;
+  const emails: string[] | undefined = Array.isArray(body.emails)
+    ? body.emails
+    : email
+      ? [email]
+      : undefined;
 
   const access = teamId
     ? await resolveTeamAccess(currentUser.id, teamId)
@@ -125,112 +116,8 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (emails !== undefined) {
-    const role = await validateRole(orgId, teamId, roleId);
-    if ("error" in role) {
-      return NextResponse.json({ error: role.error }, { status: role.status });
-    }
-
-    const sendInvite = body.sendInvite === true;
-    const [org] = await db
-      .select({ name: organizations.name })
-      .from(organizations)
-      .where(eq(organizations.id, orgId))
-      .limit(1);
-    const orgName = org?.name ?? "organization";
-
-    const unique = [
-      ...new Map(
-        emails
-          .map((e) =>
-            typeof e === "string" ? { email: e } : e,
-          )
-          .filter((e) => typeof e.email === "string" && e.email.trim() !== "")
-          .map((e) => [e.email.trim().toLowerCase(), e]),
-      ).values(),
-    ];
-
-    const created: { email: string; name?: string; password: string }[] = [];
-    const alreadyMembers: string[] = [];
-    const emailed: string[] = [];
-    const emailedSet = new Set<string>();
-    const emailErrors: { email: string; error: string }[] = [];
-
-    for (const { email, name } of unique) {
-      let [user] = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-
-      let password = "";
-      if (!user) {
-        password = randomBytes(12).toString("base64url");
-        user = await createUser(name ?? email, email, password);
-        created.push({ email, name, password });
-      }
-
-      const [membership] = await db
-        .insert(memberships)
-        .values({
-          userId: user.id,
-          organizationId: orgId,
-          teamId: teamId || null,
-          roleId: role.roleId,
-        })
-        .onConflictDoNothing()
-        .returning();
-
-      if (!membership) {
-        alreadyMembers.push(email);
-        continue;
-      }
-
-      if (!sendInvite) continue;
-      const isNew = created.some((c) => c.email === email);
-      try {
-        await sendEmail({
-          to: email,
-          subject: `Your ${orgName} account`,
-          text: isNew
-            ? `Your ${orgName} account has been created.\n\nSign in at ${appUrl()}\nEmail: ${email}\nPassword: ${password}`
-            : `You've been added to ${orgName}. Sign in at ${appUrl()} with your existing account.`,
-        });
-        emailed.push(email);
-        emailedSet.add(email);
-      } catch (e) {
-        emailErrors.push({ email, error: (e as Error).message });
-      }
-    }
-
-    // If the password reached the recipient by email, don't echo it back.
-    const createdForResponse = created.map((c) =>
-      emailedSet.has(c.email)
-        ? { email: c.email, name: c.name }
-        : c,
-    );
-
-    return NextResponse.json({
-      bulk: true,
-      created: createdForResponse,
-      alreadyMembers,
-      emailed,
-      emailErrors,
-    });
-  }
-
-  if (!email || typeof email !== "string") {
+  if (!emails || emails.length === 0) {
     return NextResponse.json({ error: "email is required" }, { status: 400 });
-  }
-
-  const [targetUser] = await db
-    .select()
-    .from(users)
-    .where(eq(users.email, email))
-    .limit(1);
-
-  if (!targetUser) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
   const role = await validateRole(orgId, teamId, roleId);
@@ -238,25 +125,29 @@ export async function POST(
     return NextResponse.json({ error: role.error }, { status: role.status });
   }
 
-  const [membership] = await db
-    .insert(memberships)
-    .values({
-      userId: targetUser.id,
-      organizationId: orgId,
-      teamId: teamId || null,
-      roleId: role.roleId,
-    })
-    .onConflictDoNothing()
-    .returning();
+  // Accounts are self-created: known users join directly, unknown emails get
+  // a single-use join link (emailed when SMTP is configured, returned for the
+  // UI to display otherwise).
+  const result = await resolveInviteTargets(orgId, emails, teamId || null, role.roleId, currentUser.id);
 
-  if (!membership) {
-    return NextResponse.json(
-      { error: "User is already a member" },
-      { status: 409 },
-    );
-  }
+  const [org] = await db
+    .select({ name: organizations.name })
+    .from(organizations)
+    .where(eq(organizations.id, orgId))
+    .limit(1);
+  const { emailed, emailErrors } = await emailInviteLinks(org?.name ?? "the organization", result.invited);
 
-  return NextResponse.json(membership, { status: 201 });
+  const alreadyMembers = emails
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => !result.added.includes(e) && !result.invited.some((i) => i.email === e));
+
+  return NextResponse.json({
+    added: result.added,
+    invited: result.invited,
+    alreadyMembers,
+    emailed,
+    emailErrors,
+  });
 }
 
 export async function PATCH(
@@ -324,34 +215,75 @@ export async function DELETE(
   if (!currentUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { orgId } = await params;
-  const { userId, teamId } = await req.json();
+  const { userId, teamId, all } = await req.json();
 
-  const access = teamId
-    ? await resolveTeamAccess(currentUser.id, teamId)
-    : await resolveOrganizationAccess(currentUser.id, orgId);
-  const ok = teamId
-    ? access !== null && (access as { orgId: string }).orgId === orgId
-    : access !== null;
-  if (!ok) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  if (
-    !(await hasPermission(
-      { userId: currentUser.id, orgId, ...(teamId ? { teamId } : {}) },
-      "manage_members",
-    ))
-  ) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Self-leave is always allowed; removing someone else needs manage_members.
+  if (userId !== currentUser.id) {
+    const access = teamId
+      ? await resolveTeamAccess(currentUser.id, teamId)
+      : await resolveOrganizationAccess(currentUser.id, orgId);
+    const ok = teamId
+      ? access !== null && (access as { orgId: string }).orgId === orgId
+      : access !== null;
+    if (!ok) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (
+      !(await hasPermission(
+        { userId: currentUser.id, orgId, ...(teamId ? { teamId } : {}) },
+        "manage_members",
+      ))
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   if (!userId) {
     return NextResponse.json({ error: "userId is required" }, { status: 400 });
   }
 
+  // An org with no org-wide members has nobody who can manage it (team
+  // members only see their teams) — block removal of the last one.
+  // (Leaving entirely, `all: true`, drops every row but still hits this guard.)
+  if (!teamId) {
+    const [target] = await db
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.userId, userId),
+          eq(memberships.organizationId, orgId),
+          isNull(memberships.teamId),
+        ),
+      )
+      .limit(1);
+    if (target) {
+      const others = await db
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.organizationId, orgId),
+            isNull(memberships.teamId),
+          ),
+        );
+      if (others.length <= 1) {
+        return NextResponse.json(
+          { error: "Cannot remove the last organization-wide member" },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const conditions = [
     eq(memberships.userId, userId),
     eq(memberships.organizationId, orgId),
   ];
+  if (all === true && userId === currentUser.id) {
+    await db.delete(memberships).where(and(...conditions));
+    return NextResponse.json({ success: true });
+  }
   if (teamId) {
     conditions.push(eq(memberships.teamId, teamId));
   } else {

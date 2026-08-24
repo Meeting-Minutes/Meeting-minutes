@@ -12,7 +12,7 @@ export async function verifyCredentials(email: string, password: string) {
   const [user] = await db
     .select()
     .from(users)
-    .where(eq(users.email, email))
+    .where(eq(users.email, email.trim().toLowerCase()))
     .limit(1);
 
   if (!user?.passwordHash) return null;
@@ -29,7 +29,7 @@ export const getCurrentUser = cache(async () => {
   if (!payload?.userId) return null;
 
   const [user] = await db
-    .select({ id: users.id, email: users.email, name: users.name })
+    .select({ id: users.id, email: users.email, name: users.name, title: users.title, post: users.post })
     .from(users)
     .where(eq(users.id, payload.userId))
     .limit(1);
@@ -44,6 +44,9 @@ export async function requireAuth() {
 }
 
 export async function createUser(name: string, email: string, password: string) {
+  // Canonical lowercase emails — invite targeting and login lookups both
+  // compare against the lowercased address.
+  email = email.trim().toLowerCase();
   const hashedPassword = await hash(password, 10);
   const existingUser = await db
     .select()

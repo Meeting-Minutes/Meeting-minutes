@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { db } from "../index";
 import {
   organizations,
@@ -21,8 +22,7 @@ import { bootstrapOrgAdmin } from "@/lib/permissions";
 
 const PCAMPUS_FIELDS = [
   { name: "title", label: "बैठकको शीर्षक", type: "text" },
-  { name: "date_np", label: "मिति (नेपाली)", type: "text" },
-  { name: "date_ad", label: "मिति (अंग्रेजी)", type: "date" },
+  { name: "date_ad", label: "मिति", type: "date" },
   { name: "day", label: "दिन", type: "text" },
   { name: "time", label: "समय", type: "text" },
   { name: "location", label: "स्थान", type: "text" },
@@ -88,15 +88,16 @@ async function ensureMember(userId: string, orgId: string, teamId: string | null
 async function createTemplate(
   orgId: string, userId: string, name: string, desc: string, fields: unknown[], texPath: string,
 ) {
+  const texSource = readFileSync(texPath, "utf-8");
   const [t] = await db.select({ id: templates.id, fields: templates.fields }).from(templates).where(eq(templates.name, name)).limit(1);
   if (t) {
     if (!t.fields || (t.fields as unknown[]).length === 0) {
-      await db.update(templates).set({ fields: fields as never }).where(eq(templates.id, t.id));
+      await db.update(templates).set({ fields: fields as never, texSource }).where(eq(templates.id, t.id));
     }
     return t.id;
   }
   const id = randomUUID();
-  await db.insert(templates).values({ id, orgId, name, description: desc, createdBy: userId, fields: fields as never, texPath });
+  await db.insert(templates).values({ id, orgId, name, description: desc, createdBy: userId, fields: fields as never, texSource });
   return id;
 }
 
@@ -128,6 +129,24 @@ async function ensureShare(minutesId: string, token: string, email: string | nul
     .insert(shares)
     .values({ id: randomUUID(), minutesId, token, email, createdBy })
     .onConflictDoNothing();
+}
+
+// Repair drift from manual member removal: every demo org keeps its founder as
+// an org-wide Admin. Checked explicitly (not onConflictDoNothing) so we don't
+// rely on a unique constraint existing.
+async function ensureFounderAdmin(orgId: string, userId: string) {
+  const [m] = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(eq(memberships.organizationId, orgId), eq(memberships.userId, userId), isNull(memberships.teamId)))
+    .limit(1);
+  if (m) return;
+  const [adminRole] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.orgId, orgId), eq(roles.name, "Admin"), isNull(roles.teamId)))
+    .limit(1);
+  await db.insert(memberships).values({ userId, organizationId: orgId, teamId: null, roleId: adminRole?.id ?? null });
 }
 
 async function deleteMeeting(meetingId: string) {
@@ -230,6 +249,7 @@ export async function seedDemo() {
     await db.insert(organizations).values({ id: pcampusId, name: "PCampus", slug: "pcampus" });
     await bootstrapOrgAdmin(pcampusId, adminId);
   }
+  await ensureFounderAdmin(pcampusId, adminId);
 
   // org-wide admin + secretary roles, nested teams, memberships
   const adminRoleId = (await db.select({ id: roles.id }).from(roles)
@@ -265,7 +285,6 @@ export async function seedDemo() {
   const committee = await createMeeting(pcampusId, engId, pcampusMinuteId,
     "अनुसन्धान परियोजना कार्यान्वयन समितिको बैठक", "2026-03-18T02:45:00Z", adminId, {
     title: "अनुसन्धान परियोजना कार्यान्वयन समितिको बैठक",
-    date_np: "२०८२/१२/०४",
     date_ad: "2026-03-18",
     day: "बुधबार",
     time: "राति ०२:४५ बजे",
@@ -333,6 +352,7 @@ export async function seedDemo() {
     await db.insert(organizations).values({ id: riversideId, name: "Riverside NGO", slug: "riverside-ngo" });
     await bootstrapOrgAdmin(riversideId, adminId);
   }
+  await ensureFounderAdmin(riversideId, adminId);
 
   const opsId = await ensureTeam(riversideId, "Field Operations");
   await createMeeting(riversideId, opsId, null,

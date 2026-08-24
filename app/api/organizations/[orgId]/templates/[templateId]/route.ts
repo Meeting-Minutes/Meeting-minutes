@@ -2,17 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { templates } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
-import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
-import { resolve, join } from "path";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
-
-const UPLOADS_DIR = resolve("uploads/templates");
-
-function ensureUploadsDir() {
-  if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR, { recursive: true });
-}
 
 export async function GET(
   _req: Request,
@@ -27,11 +18,11 @@ export async function GET(
     .where(and(eq(templates.id, templateId), eq(templates.orgId, orgId)))
     .limit(1);
   if (!tmpl) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  let templateSource: string | null = null;
-  if (tmpl.texPath) {
-    try { templateSource = readFileSync(resolve(tmpl.texPath), "utf-8"); } catch { /* missing */ }
-  }
-  return NextResponse.json({ ...tmpl, fields: tmpl.fields ?? [], templateSource });
+  return NextResponse.json({
+    ...tmpl,
+    fields: tmpl.fields ?? [],
+    templateSource: tmpl.texSource,
+  });
 }
 
 export async function PATCH(
@@ -70,12 +61,7 @@ export async function PATCH(
   }
 
   if (texFile && texFile.name) {
-    ensureUploadsDir();
-    const ext = texFile.name.endsWith(".hbs") ? ".hbs" : texFile.name.endsWith(".html") ? ".html" : "";
-    const fileName = `${randomUUID()}${ext}`;
-    const texPath = join(UPLOADS_DIR, fileName);
-    writeFileSync(texPath, Buffer.from(await texFile.arrayBuffer()));
-    update.texPath = texPath;
+    update.texSource = await texFile.text();
   }
 
   const [updated] = await db

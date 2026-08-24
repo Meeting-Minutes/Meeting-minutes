@@ -67,6 +67,11 @@ export async function GET(
     .where(eq(minutes.id, meetingId))
     .limit(1);
 
+  const teamRows = await db
+    .select({ teamId: meetingTeams.teamId })
+    .from(meetingTeams)
+    .where(eq(meetingTeams.meetingId, meetingId));
+
   return NextResponse.json({
     meeting: {
       id: access.meeting.id,
@@ -76,6 +81,7 @@ export async function GET(
       location: access.meeting.location,
       scheduledAt: access.meeting.scheduledAt,
       createdAt: access.meeting.createdAt,
+      teamIds: teamRows.map((t) => t.teamId).filter((t): t is string => t !== null),
     },
     template: template,
     minutes: minutesRow ?? null,
@@ -102,7 +108,31 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { title, description, location, scheduledAt } = await req.json();
+  const { title, description, location, scheduledAt, templateId } = await req.json();
+
+  // A template can be attached once, while the meeting is still freeform and
+  // before minutes exist; switching/clearing afterwards would orphan content.
+  if (templateId !== undefined) {
+    const [minutesRow] = await db
+      .select({ id: minutes.id })
+      .from(minutes)
+      .where(eq(minutes.id, meetingId))
+      .limit(1);
+    if (access.meeting.templateId || minutesRow) {
+      return NextResponse.json(
+        { error: "This meeting already has a template" },
+        { status: 409 },
+      );
+    }
+    const [template] = await db
+      .select({ id: templates.id, orgId: templates.orgId })
+      .from(templates)
+      .where(eq(templates.id, templateId))
+      .limit(1);
+    if (!template || template.orgId !== access.orgId) {
+      return NextResponse.json({ error: "Template not found" }, { status: 400 });
+    }
+  }
 
   const [updated] = await db
     .update(meetings)
@@ -111,6 +141,7 @@ export async function PATCH(
       ...(description !== undefined && { description: description || null }),
       ...(location !== undefined && { location: location || null }),
       ...(scheduledAt !== undefined && { scheduledAt: new Date(scheduledAt) }),
+      ...(templateId !== undefined && { templateId }),
     })
     .where(eq(meetings.id, meetingId))
     .returning();

@@ -3,16 +3,8 @@ import { randomUUID } from "node:crypto";
 import { db } from "@/db";
 import { templates } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import { resolve, join } from "path";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
-
-const UPLOADS_DIR = resolve("uploads/templates");
-
-function ensureUploadsDir() {
-  if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR, { recursive: true });
-}
 
 export async function GET(
   _req: Request,
@@ -54,13 +46,9 @@ export async function POST(
     if (!Array.isArray(fields)) return NextResponse.json({ error: "fields must be an array" }, { status: 400 });
   }
 
-  let texPath: string | null = null;
+  let texSource: string | null = null;
   if (texFile && texFile.name) {
-    ensureUploadsDir();
-    const ext = texFile.name.endsWith(".hbs") ? ".hbs" : texFile.name.endsWith(".html") ? ".html" : "";
-    const fileName = `${randomUUID()}${ext}`;
-    texPath = join(UPLOADS_DIR, fileName);
-    writeFileSync(texPath, Buffer.from(await texFile.arrayBuffer()));
+    texSource = await texFile.text();
   }
 
   const templateId = randomUUID();
@@ -73,7 +61,7 @@ export async function POST(
       description: description?.trim() || null,
       createdBy: user.id,
       fields,
-      texPath,
+      texSource,
     })
     .returning();
 

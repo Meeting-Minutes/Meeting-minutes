@@ -279,6 +279,23 @@ export function isRoleScopeValid(
   return roleTeamId === null || roleTeamId === membershipTeamId;
 }
 
+/** Validate that `roleId` exists, belongs to `orgId`, and its scope fits the
+ *  membership/invite team. Returns the normalized roleId or an HTTP error. */
+export async function validateRole(
+  orgId: string,
+  teamId: string | null | undefined,
+  roleId: string | null | undefined,
+): Promise<{ roleId: string | null } | { error: string; status: number }> {
+  if (!roleId) return { roleId: null };
+  const [role] = await db.select().from(roles).where(eq(roles.id, roleId)).limit(1);
+  if (!role) return { error: "Role not found", status: 404 };
+  if (role.orgId !== orgId) return { error: "Role does not belong to this org", status: 400 };
+  if (!isRoleScopeValid(role.teamId, teamId || null)) {
+    return { error: "Role scope does not match the team", status: 400 };
+  }
+  return { roleId };
+}
+
 /** Can `userId` manage org-wide roles in `orgId`? (org-scoped `manage_roles`.) */
 export async function canManageOrgRoles(
   userId: string,

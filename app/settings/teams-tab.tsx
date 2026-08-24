@@ -26,11 +26,15 @@ export default function TeamsTab({
   orgId,
   fetchJson,
   onError,
+  can,
 }: {
   orgId: string;
   fetchJson: (url: string, init?: RequestInit) => Promise<unknown>;
   onError: (e: string) => void;
+  can: (key: string, teamId?: string | null) => boolean;
 }) {
+  // UI-only gates mirroring the API checks for this tab's actions.
+  const canManageTeams = can("manage_teams");
   const [teams, setTeams] = useState<Team[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -52,7 +56,11 @@ export default function TeamsTab({
   const [newRoleName, setNewRoleName] = useState("");
   const [rolesNote, setRolesNote] = useState<string | null>(null);
 
+  // UI-only gates mirroring the API checks for this tab's actions.
   const team = selectedId ? teams.find((t) => t.id === selectedId) ?? null : null;
+  const canManageTeamMembers = team ? can("manage_members", team.id) : false;
+  const canEditTeamRoles =
+    !!team && (can("manage_team_roles", team.id) || can("manage_roles"));
 
   // Node tree: children keyed by parent (null = org root)
   const childrenBy = useMemo(() => {
@@ -237,14 +245,22 @@ export default function TeamsTab({
   async function addTeamMember() {
     if (!team || !addEmail.trim()) return;
     try {
-      await fetchJson(`/api/organizations/${orgId}/members`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: addEmail.trim(), teamId: team.id, roleId: addRoleId || null }),
-      });
+      const d = (await fetchJson(
+        `/api/organizations/${orgId}/members`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: addEmail.trim(), teamId: team.id, roleId: addRoleId || null }),
+        },
+      )) as { invited?: { email: string; token: string }[] };
       setAddEmail("");
       setAddRoleId("");
       await load(team.id);
+      if (d.invited && d.invited.length > 0) {
+        window.alert(
+          `${d.invited[0].email} has no account yet — share this join link:\n${window.location.origin}/join/${d.invited[0].token}`,
+        );
+      }
     } catch (e) {
       onError((e as Error).message);
     }
@@ -402,46 +418,50 @@ export default function TeamsTab({
             <span className="shrink-0 text-[10px] text-text-muted/60">{kids.length}</span>
           )}
           <div className="relative shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setMenuFor(menuFor === t.id ? null : t.id);
-              }}
-              className="px-1.5 py-2 text-sm text-text-muted opacity-0 transition-opacity hover:text-text-normal group-hover:opacity-100"
-              title="Team actions"
-            >
-              ⋯
-            </button>
-            {menuFor === t.id && (
-              <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-border/50 bg-bg-primary py-1 shadow-xl animate-pop-in">
+            {canManageTeams && (
+              <>
                 <button
-                  className="block w-full px-3 py-1.5 text-left text-sm text-text-normal hover:bg-surface/60"
-                  onClick={() => {
-                    addSubTeam(t.id);
-                    setMenuFor(null);
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuFor(menuFor === t.id ? null : t.id);
                   }}
+                  className="px-1.5 py-2 text-sm text-text-muted opacity-0 transition-opacity hover:text-text-normal group-hover:opacity-100"
+                  title="Team actions"
                 >
-                  New sub-team
+                  ⋯
                 </button>
-                <button
-                  className="block w-full px-3 py-1.5 text-left text-sm text-text-normal hover:bg-surface/60"
-                  onClick={() => {
-                    selectTeam(t.id);
-                    setMenuFor(null);
-                  }}
-                >
-                  Rename / move
-                </button>
-                <button
-                  className="block w-full px-3 py-1.5 text-left text-sm text-danger hover:bg-danger/10"
-                  onClick={() => {
-                    deleteTeam(t);
-                    setMenuFor(null);
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
+                {menuFor === t.id && (
+                  <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-border/50 bg-bg-primary py-1 shadow-xl animate-pop-in">
+                    <button
+                      className="block w-full px-3 py-1.5 text-left text-sm text-text-normal hover:bg-surface/60"
+                      onClick={() => {
+                        addSubTeam(t.id);
+                        setMenuFor(null);
+                      }}
+                    >
+                      New sub-team
+                    </button>
+                    <button
+                      className="block w-full px-3 py-1.5 text-left text-sm text-text-normal hover:bg-surface/60"
+                      onClick={() => {
+                        selectTeam(t.id);
+                        setMenuFor(null);
+                      }}
+                    >
+                      Rename / move
+                    </button>
+                    <button
+                      className="block w-full px-3 py-1.5 text-left text-sm text-danger hover:bg-danger/10"
+                      onClick={() => {
+                        deleteTeam(t);
+                        setMenuFor(null);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -457,9 +477,11 @@ export default function TeamsTab({
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold">Teams</h1>
           </div>
-          <button onClick={addRootTeam} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white">
-            New team
-          </button>
+          {canManageTeams && (
+            <button onClick={addRootTeam} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white">
+              New team
+            </button>
+          )}
         </div>
         <div className="text-sm text-text-muted">No teams yet. Create the first one to start organizing members.</div>
       </div>
@@ -472,9 +494,11 @@ export default function TeamsTab({
       <div className="w-72 shrink-0 rounded-2xl border border-border/40 bg-surface/40 p-3 animate-fade-up">
         <div className="mb-2 flex items-center justify-between px-1">
           <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Teams</span>
-          <button onClick={addRootTeam} className="text-accent hover:text-accent-hover text-sm" title="New team">
-            +
-          </button>
+          {canManageTeams && (
+            <button onClick={addRootTeam} className="text-accent hover:text-accent-hover text-sm" title="New team">
+              +
+            </button>
+          )}
         </div>
         <div className="flex flex-col">
           <div
@@ -549,6 +573,7 @@ export default function TeamsTab({
                 teams={teams}
                 depthOf={depthOf}
                 subtreeIds={subtreeIds}
+                canEdit={canManageTeams}
                 onSave={saveOverview}
                 onDelete={deleteTeam}
               />
@@ -559,28 +584,30 @@ export default function TeamsTab({
                 {membersNote && (
                   <div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/25 text-xs text-warning">{membersNote}</div>
                 )}
-                <div className="flex gap-2">
-                  <input
-                    value={addEmail}
-                    onChange={(e) => setAddEmail(e.target.value)}
-                    placeholder="member@example.com"
-                    className={`flex-1 ${inputClass}`}
-                    onKeyDown={(e) => e.key === "Enter" && addTeamMember()}
-                  />
-                  <select
-                    value={addRoleId}
-                    onChange={(e) => setAddRoleId(e.target.value)}
-                    className={`${inputClass} cursor-pointer`}
-                  >
-                    <option value="">No role</option>
-                    {assignableRoles.map((r) => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
-                  <button onClick={addTeamMember} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white shrink-0">
-                    Add
-                  </button>
-                </div>
+                {canManageTeamMembers && (
+                  <div className="flex gap-2">
+                    <input
+                      value={addEmail}
+                      onChange={(e) => setAddEmail(e.target.value)}
+                      placeholder="member@example.com"
+                      className={`flex-1 ${inputClass}`}
+                      onKeyDown={(e) => e.key === "Enter" && addTeamMember()}
+                    />
+                    <select
+                      value={addRoleId}
+                      onChange={(e) => setAddRoleId(e.target.value)}
+                      className={`${inputClass} cursor-pointer`}
+                    >
+                      <option value="">No role</option>
+                      {assignableRoles.map((r) => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                    <button onClick={addTeamMember} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white shrink-0">
+                      Add
+                    </button>
+                  </div>
+                )}
                 <div className="flex flex-col gap-2">
                   {members.map((m) => (
                     <div
@@ -594,23 +621,27 @@ export default function TeamsTab({
                         <div className="text-sm font-medium truncate">{m.user.name || m.user.email}</div>
                         <div className="text-xs text-text-muted truncate">{m.user.email}</div>
                       </div>
-                      <select
-                        value={m.roleId ?? ""}
-                        onChange={(e) => assignMemberRole(m.userId, e.target.value || null)}
-                        className={`${inputClass} cursor-pointer`}
-                      >
-                        <option value="">No role</option>
-                        {assignableRoles.map((r) => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => removeTeamMember(m.userId)}
-                        className="px-1 text-text-muted hover:text-danger text-sm"
-                        title="Remove from team"
-                      >
-                        ✕
-                      </button>
+                      {canManageTeamMembers && (
+                        <select
+                          value={m.roleId ?? ""}
+                          onChange={(e) => assignMemberRole(m.userId, e.target.value || null)}
+                          className={`${inputClass} cursor-pointer`}
+                        >
+                          <option value="">No role</option>
+                          {assignableRoles.map((r) => (
+                            <option key={r.id} value={r.id}>{r.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      {canManageTeamMembers && (
+                        <button
+                          onClick={() => removeTeamMember(m.userId)}
+                          className="px-1 text-text-muted hover:text-danger text-sm"
+                          title="Remove from team"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
                   ))}
                   {members.length === 0 && !membersNote && (
@@ -640,28 +671,32 @@ export default function TeamsTab({
                           </span>
                           <span className="truncate">{r.name}</span>
                         </button>
-                        <span className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button onClick={() => renameTeamRole(r.id)} className="text-text-muted hover:text-text-normal text-xs" title="Rename">✎</button>
-                          <button onClick={() => deleteTeamRole(r.id)} className="text-text-muted hover:text-danger text-xs" title="Delete">✕</button>
-                        </span>
+                        {canEditTeamRoles && (
+                          <span className="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => renameTeamRole(r.id)} className="text-text-muted hover:text-text-normal text-xs" title="Rename">✎</button>
+                            <button onClick={() => deleteTeamRole(r.id)} className="text-text-muted hover:text-danger text-xs" title="Delete">✕</button>
+                          </span>
+                        )}
                       </div>
                     ))}
                     {teamRoles.length === 0 && !rolesNote && (
                       <div className="text-sm text-text-muted">No team roles yet.</div>
                     )}
                   </div>
-                  <div className="mt-3 flex gap-2">
-                    <input
-                      value={newRoleName}
-                      onChange={(e) => setNewRoleName(e.target.value)}
-                      placeholder="New team role"
-                      onKeyDown={(e) => e.key === "Enter" && createTeamRole()}
-                      className={`flex-1 ${inputClass}`}
-                    />
-                    <button onClick={createTeamRole} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white">
-                      Add
-                    </button>
-                  </div>
+                  {canEditTeamRoles && (
+                    <div className="mt-3 flex gap-2">
+                      <input
+                        value={newRoleName}
+                        onChange={(e) => setNewRoleName(e.target.value)}
+                        placeholder="New team role"
+                        onKeyDown={(e) => e.key === "Enter" && createTeamRole()}
+                        className={`flex-1 ${inputClass}`}
+                      />
+                      <button onClick={createTeamRole} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white">
+                        Add
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   {selectedRole ? (
@@ -676,6 +711,7 @@ export default function TeamsTab({
                         <PermissionGrid
                           perms={perms}
                           selected={rolePerms[selectedRole.id] ?? []}
+                          readOnly={!canEditTeamRoles}
                           onToggle={(permId, on) => togglePermission(selectedRole.id, permId, on)}
                         />
                       ) : (
@@ -700,6 +736,7 @@ function OverviewForm({
   teams,
   depthOf,
   subtreeIds,
+  canEdit,
   onSave,
   onDelete,
 }: {
@@ -707,6 +744,7 @@ function OverviewForm({
   teams: Team[];
   depthOf: (id: string) => number;
   subtreeIds: (id: string) => Set<string>;
+  canEdit: boolean;
   onSave: (t: Team, values: { name: string; description: string; parentTeamId: string | null }) => void;
   onDelete: (t: Team) => void;
 }) {
@@ -721,20 +759,21 @@ function OverviewForm({
     <div className="max-w-md flex flex-col gap-4">
       <div>
         <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">Name</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} className={`w-full ${inputClass}`} />
+        <input value={name} disabled={!canEdit} onChange={(e) => setName(e.target.value)} className={`w-full ${inputClass} disabled:opacity-60`} />
       </div>
       <div>
         <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">Description</label>
         <textarea
           value={description}
+          disabled={!canEdit}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
-          className={`w-full ${inputClass} resize-y`}
+          className={`w-full ${inputClass} resize-y disabled:opacity-60`}
         />
       </div>
       <div>
         <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">Parent team</label>
-        <select value={parentId} onChange={(e) => setParentId(e.target.value)} className={`w-full ${inputClass} cursor-pointer`}>
+        <select value={parentId} disabled={!canEdit} onChange={(e) => setParentId(e.target.value)} className={`w-full ${inputClass} cursor-pointer disabled:opacity-60`}>
           <option value="">None — top-level team</option>
           {teams
             .filter((t) => t.id !== team.id && !subtreeIds(team.id).has(t.id))
@@ -747,20 +786,22 @@ function OverviewForm({
         </select>
         <p className="mt-1 text-[11px] text-text-muted">Moving a team keeps its sub-teams.</p>
       </div>
-      <div className="flex gap-2">
-        <button
-          onClick={() => onSave(team, { name, description, parentTeamId: parentId || null })}
-          className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white self-start"
-        >
-          Save
-        </button>
-        <button
-          onClick={() => onDelete(team)}
-          className="px-4 py-2 rounded-lg border border-danger/30 text-sm text-danger hover:bg-danger/10 self-start transition-colors"
-        >
-          Delete team
-        </button>
-      </div>
+      {canEdit && (
+        <div className="flex gap-2">
+          <button
+            onClick={() => onSave(team, { name, description, parentTeamId: parentId || null })}
+            className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white self-start"
+          >
+            Save
+          </button>
+          <button
+            onClick={() => onDelete(team)}
+            className="px-4 py-2 rounded-lg border border-danger/30 text-sm text-danger hover:bg-danger/10 self-start transition-colors"
+          >
+            Delete team
+          </button>
+        </div>
+      )}
     </div>
   );
 }

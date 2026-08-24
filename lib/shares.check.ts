@@ -1,4 +1,4 @@
-// Self-check for shares + bulk member add — `bun run db:check:shares`.
+// Self-check for shares + member add/invite — `bun run db:check:shares`.
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
@@ -9,7 +9,9 @@ import {
   meetings,
   minutes,
   shares,
+  invitations,
 } from "../db/schema";
+import { resolveInviteTargets, isExpired } from "./invitations";
 
 function q(s = 8) {
   return crypto.randomUUID().slice(0, s);
@@ -105,57 +107,55 @@ async function main() {
   );
   console.log("OK: shares cascade-delete with their minutes");
 
-  // --- Bulk member-add semantics: create missing, reuse existing, skip members, dedupe ---
+  // --- Member-add semantics: reuse existing members, invite unknown emails ---
   await db.insert(minutes).values({
     id: meetingId,
     content: {},
   });
   const emailA = `bulk_a_${q()}@test`;
   const emailB = `bulk_b_${q()}@test`;
-  await db.insert(users).values({ id: crypto.randomUUID(), email: emailA, name: "A" });
-  await db.insert(memberships).values({
-    userId: (await db.select().from(users).where(eq(users.email, emailA)).limit(1))[0].id,
-    organizationId: orgId,
-    roleId: null,
-  });
+  const userA = crypto.randomUUID();
+  await db.insert(users).values({ id: userA, email: emailA, name: "A" });
 
-  // Same dedupe as the route: unique by lowercased email.
-  const unique = [
-    ...new Map(
-      [emailA, emailB, emailA].map((e) => [e.toLowerCase(), e]),
-    ).values(),
-  ];
+  // Same normalization as resolveInviteTargets.
+  const unique = [...new Set([emailA, emailB, emailA].map((e) => e.toLowerCase()))];
   console.assert(unique.length === 2, "FAIL: duplicate emails should be deduped");
 
-  const alreadyMembers: string[] = [];
-  let createdB = false;
-  for (const email of unique) {
-    let [u] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-    if (!u) {
-      await db.insert(users).values({ id: crypto.randomUUID(), email, name: email });
-      u = (await db.select().from(users).where(eq(users.email, email)).limit(1))[0];
-      if (email === emailB) createdB = true;
-    }
-    const [m] = await db
-      .insert(memberships)
-      .values({ userId: u.id, organizationId: orgId, roleId: null })
-      .onConflictDoNothing()
-      .returning();
-    if (!m) alreadyMembers.push(email);
-  }
+  // First pass: known account joins directly, unknown email gets an invite.
+  const { added, invited } = await resolveInviteTargets(orgId, unique, null, null, userId);
   console.assert(
-    alreadyMembers.length === 1 && alreadyMembers[0] === emailA,
-    "FAIL: already-member should be skipped, not duplicated",
+    added.length === 1 &&
+      added[0] === emailA &&
+      invited.length === 1 &&
+      invited[0].email === emailB,
+    "FAIL: existing user should be added directly; unknown email should get an invite",
   );
-  console.assert(createdB, "FAIL: missing user should be created");
-  console.log("OK: bulk add creates/reuses users and skips existing members");
+
+  // Second pass: A is a member now (skipped), B just gets another link.
+  const again = await resolveInviteTargets(orgId, unique, null, null, userId);
+  console.assert(
+    again.added.length === 0 &&
+      again.invited.length === 1 &&
+      again.invited[0].email === emailB,
+    "FAIL: repeat pass should skip the existing member, not duplicate them",
+  );
+
+  const [invRow] = await db.select().from(invitations).where(eq(invitations.email, emailB));
+  console.assert(!!invRow, "FAIL: invitation row should exist for the unknown email");
+  console.assert(
+    invRow && !invRow.acceptedAt && !isExpired(invRow),
+    "FAIL: a fresh invitation should be pending",
+  );
+  const [noUser] = await db.select().from(users).where(eq(users.email, emailB));
+  console.assert(!noUser, "FAIL: inviting must not create a user account");
+  console.log("OK: member add reuses existing users and invites new ones via token");
 
   // --- Cleanup ---
+  await db.delete(invitations).where(eq(invitations.organizationId, orgId));
   await db.delete(memberships).where(eq(memberships.organizationId, orgId));
   await db.delete(minutes).where(eq(minutes.id, meetingId));
   await db.delete(meetings).where(eq(meetings.id, meetingId));
   await db.delete(users).where(eq(users.id, userId));
-  await db.delete(users).where(eq(users.email, emailB));
   await db.delete(users).where(eq(users.email, emailA));
   await db.delete(organizations).where(eq(organizations.id, orgId));
 

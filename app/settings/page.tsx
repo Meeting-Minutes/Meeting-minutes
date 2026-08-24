@@ -1,10 +1,12 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PermissionGrid } from "./permission-grid";
+import ThemeToggle from "../theme-toggle";
 import TeamsTab from "./teams-tab";
+import { useMyPermissions } from "../use-my-permissions";
 
 type Org = { id: string; name: string; description?: string | null; slug: string };
 type Role = { id: string; name: string; orgId: string; teamId: string | null };
@@ -61,19 +63,27 @@ function SettingsContent() {
 
   // Members
   const [members, setMembers] = useState<Member[]>([]);
-  const [addEmail, setAddEmail] = useState("");
 
   // Templates
   const [templates, setTemplates] = useState<Template[]>([]);
 
-  const fetchJson = useCallback(async (url: string, init?: RequestInit) => {
-    const res = await fetch(url, init);
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
-      throw new Error(d.error || `Request failed (${res.status})`);
-    }
-    return res.json();
-  }, []);
+  // UI-only gate; the API enforces the real checks.
+  const { can, refresh: refreshPerms } = useMyPermissions(org?.id);
+
+  const fetchJson = useCallback(
+    async (url: string, init?: RequestInit) => {
+      const res = await fetch(url, init);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Request failed (${res.status})`);
+      }
+      // Mutations can change the current user's own permissions (role edits,
+      // membership changes, new teams) — re-sync the UI gate afterwards.
+      if (init?.method && init.method !== "GET") refreshPerms();
+      return res.json();
+    },
+    [refreshPerms],
+  );
 
   // Load orgs, pick active one
   useEffect(() => {
@@ -198,21 +208,6 @@ function SettingsContent() {
     }
   }
 
-  async function addMember() {
-    if (!orgId || !addEmail.trim()) return;
-    try {
-      await fetchJson(`/api/organizations/${orgId}/members`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: addEmail.trim(), teamId: null }),
-      });
-      setAddEmail("");
-      setMembers(await fetchJson(`/api/organizations/${orgId}/members`));
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
   async function removeMember(userId: string, teamId: string | null) {
     if (!orgId || !window.confirm("Remove this member?")) return;
     try {
@@ -225,16 +220,6 @@ function SettingsContent() {
     } catch (e) {
       setError((e as Error).message);
     }
-  }
-
-  async function bulkAddMembers(emails: string[], sendInvite: boolean) {
-    const d = await fetchJson(`/api/organizations/${orgId}/members`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emails, teamId: null, sendInvite }),
-    });
-    setMembers(await fetchJson(`/api/organizations/${orgId}/members`));
-    return d;
   }
 
   function openTemplateBuilder(template?: Template) {
@@ -255,15 +240,18 @@ function SettingsContent() {
             Settings
           </span>
         </div>
-        <select
-          value={orgId ?? ""}
-          onChange={(e) => setOrg(orgs.find((o) => o.id === e.target.value) ?? null)}
-          className="bg-bg-input border border-border rounded-lg px-3 py-1.5 text-sm text-text-normal focus:border-accent focus:outline-none hover:border-border transition-colors cursor-pointer"
-        >
-          {orgs.map((o) => (
-            <option key={o.id} value={o.id}>{o.name}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <select
+            value={orgId ?? ""}
+            onChange={(e) => setOrg(orgs.find((o) => o.id === e.target.value) ?? null)}
+            className="bg-bg-input border border-border rounded-lg px-3 py-1.5 text-sm text-text-normal focus:border-accent focus:outline-none hover:border-border transition-colors cursor-pointer"
+          >
+            {orgs.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -304,7 +292,7 @@ function SettingsContent() {
             <div className="text-sm text-text-muted animate-fade-up">Loading…</div>
           )}
 
-          {org && tab === "overview" && <OverviewTab key={org.id} org={org} onError={setError} onOrg={setOrg} />}
+          {org && tab === "overview" && <OverviewTab key={org.id} org={org} canEdit={can("manage_org")} onError={setError} onOrg={setOrg} />}
           {org && tab === "roles" && (
             <RolesTab
               roles={roles}
@@ -312,6 +300,7 @@ function SettingsContent() {
               rolePerms={rolePerms}
               selectedRoleId={selectedRoleId}
               newRoleName={newRoleName}
+              canManage={can("manage_roles")}
               onSelectRole={setSelectedRoleId}
               onNewRoleName={setNewRoleName}
               onCreateRole={createRole}
@@ -319,25 +308,30 @@ function SettingsContent() {
               onDeleteRole={deleteRole}
             />
           )}
-          {org && tab === "members" && (
+          {orgId && tab === "members" && (
             <MembersTab
+              orgId={orgId}
               members={members}
               roles={roles}
-              addEmail={addEmail}
-              onAddEmail={setAddEmail}
-              onAddMember={addMember}
-              onBulkAdd={bulkAddMembers}
+              canManage={can("manage_members")}
               onAssignRole={assignRole}
               onRemoveMember={removeMember}
               onError={setError}
             />
           )}
           {org && tab === "teams" && (
-            <TeamsTab key={org.id} orgId={org.id} fetchJson={fetchJson} onError={setError} />
+            <TeamsTab
+              key={org.id}
+              orgId={org.id}
+              fetchJson={fetchJson}
+              onError={setError}
+              can={(key, teamId) => can(key, teamId)}
+            />
           )}
           {org && tab === "templates" && (
             <TemplatesTab
               templates={templates}
+              canManage={can("manage_templates")}
               onCreate={() => openTemplateBuilder()}
               onEdit={(t) => openTemplateBuilder(t)}
             />
@@ -352,10 +346,12 @@ function SettingsContent() {
 
 function OverviewTab({
   org,
+  canEdit,
   onError,
   onOrg,
 }: {
   org: Org;
+  canEdit: boolean;
   onError: (e: string) => void;
   onOrg: (o: Org) => void;
 }) {
@@ -410,22 +406,24 @@ function OverviewTab({
           <label className="block text-sm font-medium mb-1.5">Name</label>
           <input
             value={name}
+            disabled={!canEdit}
             onChange={(e) => setName(e.target.value)}
-            className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
+            className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none disabled:opacity-60"
           />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Description</label>
           <textarea
             value={description}
+            disabled={!canEdit}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none resize-y"
+            className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none resize-y disabled:opacity-60"
           />
         </div>
         <button
           onClick={save}
-          disabled={saving}
+          disabled={saving || !canEdit}
           className="btn-primary self-start px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
         >
           {saving ? "Saving…" : "Save changes"}
@@ -441,6 +439,7 @@ function RolesTab({
   rolePerms,
   selectedRoleId,
   newRoleName,
+  canManage,
   onSelectRole,
   onNewRoleName,
   onCreateRole,
@@ -452,6 +451,7 @@ function RolesTab({
   rolePerms: Record<string, string[]>;
   selectedRoleId: string | null;
   newRoleName: string;
+  canManage: boolean;
   onSelectRole: (id: string) => void;
   onNewRoleName: (v: string) => void;
   onCreateRole: () => void;
@@ -494,34 +494,38 @@ function RolesTab({
                 </span>
                 <span className="truncate">{r.name}</span>
               </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDeleteRole(r.id); }}
-                className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-xs px-1"
-                title="Delete role"
-              >
-                ✕
-              </button>
+              {canManage && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDeleteRole(r.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-xs px-1"
+                  title="Delete role"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
           {roles.length === 0 && (
             <div className="text-sm text-text-muted">No roles yet.</div>
           )}
         </div>
-        <div className="flex gap-2">
-          <input
-            value={newRoleName}
-            onChange={(e) => onNewRoleName(e.target.value)}
-            placeholder="New role name"
-            onKeyDown={(e) => e.key === "Enter" && onCreateRole()}
-            className="flex-1 bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
-          />
-          <button
-            onClick={onCreateRole}
-            className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-          >
-            Add
-          </button>
-        </div>
+        {canManage && (
+          <div className="flex gap-2">
+            <input
+              value={newRoleName}
+              onChange={(e) => onNewRoleName(e.target.value)}
+              placeholder="New role name"
+              onKeyDown={(e) => e.key === "Enter" && onCreateRole()}
+              className="flex-1 bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
+            />
+            <button
+              onClick={onCreateRole}
+              className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+            >
+              Add
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-w-0">
@@ -539,6 +543,7 @@ function RolesTab({
           <PermissionGrid
             perms={perms}
             selected={selectedPerms}
+            readOnly={!canManage}
             onToggle={(permId, on) => onTogglePermission(selectedRole.id, permId, on)}
           />
         )}
@@ -547,84 +552,79 @@ function RolesTab({
   );
 }
 
+type InviteRow = {
+  id: string;
+  email: string | null;
+  token: string;
+  expiresAt: string;
+  teamName: string | null;
+  roleName: string | null;
+};
+
 function MembersTab({
+  orgId,
   members,
   roles,
-  addEmail,
-  onAddEmail,
-  onAddMember,
-  onBulkAdd,
+  canManage,
   onAssignRole,
   onRemoveMember,
   onError,
 }: {
+  orgId: string;
   members: Member[];
   roles: Role[];
-  addEmail: string;
-  onAddEmail: (v: string) => void;
-  onAddMember: () => void;
-  onBulkAdd: (
-    emails: string[],
-    sendInvite: boolean,
-  ) => Promise<{
-    created: { email: string; name?: string; password?: string }[];
-    alreadyMembers: string[];
-    emailed: string[];
-    emailErrors: { email: string; error: string }[];
-  }>;
+  canManage: boolean;
   onAssignRole: (userId: string, teamId: string | null, roleId: string | null) => void;
   onRemoveMember: (userId: string, teamId: string | null) => void;
   onError: (e: string) => void;
 }) {
-  const [bulkEmails, setBulkEmails] = useState("");
-  const [bulkSendInvite, setBulkSendInvite] = useState(false);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [bulkResult, setBulkResult] = useState<null | Awaited<ReturnType<typeof onBulkAdd>>>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invites, setInvites] = useState<InviteRow[]>([]);
+  const [me, setMe] = useState<{ id: string } | null>(null);
 
-  function onCsvFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? "");
-      const emails = text
-        .split(/[\n,;\t]+/)
-        .map((e) => e.trim().replace(/^"?|"?$/g, "").toLowerCase())
-        .filter((e) => e.includes("@"));
-      if (emails.length > 0) setBulkEmails(emails.join("\n"));
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setMe(d?.user ?? null))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!canManage || !orgId || !inviteOpen) return;
+    let alive = true;
+    fetch(`/api/organizations/${orgId}/invitations`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: InviteRow[]) => {
+        if (alive) setInvites(rows);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
     };
-    reader.readAsText(file);
+  }, [orgId, canManage, inviteOpen]);
+
+  async function revokeInvite(id: string) {
+    if (!window.confirm("Revoke this invite link?")) return;
+    const res = await fetch(`/api/organizations/${orgId}/invitations?id=${id}`, {
+      method: "DELETE",
+    });
+    if (res.ok) setInvites((prev) => prev.filter((i) => i.id !== id));
   }
 
-  function downloadCredentialsCsv() {
-    if (!bulkResult) return;
-    const rows = bulkResult.created
-      .filter((c) => c.password)
-      .map((c) => `${c.email},${c.password}`);
-    if (rows.length === 0) return;
-    const blob = new Blob(["email,password\n" + rows.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "credentials.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function bulkAdd() {
-    const emails = bulkEmails.split("\n").map((e) => e.trim()).filter(Boolean);
-    if (!emails.length) return;
-    setBulkBusy(true);
-    setBulkResult(null);
-    try {
-      setBulkResult(await onBulkAdd(emails, bulkSendInvite));
-      setBulkEmails("");
-      onError("");
-    } catch (e) {
-      onError((e as Error).message);
-    } finally {
-      setBulkBusy(false);
+  async function leaveOrg() {
+    if (!me || !window.confirm("Leave this organization? You will lose access to all its teams and meetings.")) return;
+    const res = await fetch(`/api/organizations/${orgId}/members`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: me.id, all: true }),
+    });
+    if (res.ok) {
+      window.location.href = "/";
+    } else {
+      const d = await res.json().catch(() => ({}));
+      onError(d.error || "Failed to leave organization");
     }
   }
-
   useEffect(() => {
     if (roles.length === 0 && members.length > 0) {
       onError("Could not load roles — role assignment may be unavailable.");
@@ -640,101 +640,26 @@ function MembersTab({
           {members.length}
         </span>
       </div>
-      <div className="animate-fade-up card-hover bg-surface border border-border/40 rounded-2xl p-3 flex gap-2" style={{ animationDelay: "40ms" }}>
-        <input
-          value={addEmail}
-          onChange={(e) => onAddEmail(e.target.value)}
-          placeholder="user@example.com"
-          onKeyDown={(e) => e.key === "Enter" && onAddMember()}
-          className="flex-1 bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
-        />
-        <button
-          onClick={onAddMember}
-          className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white"
-        >
-          Add member
-        </button>
-      </div>
-      <div className="animate-fade-up card-hover bg-surface border border-border/40 rounded-2xl p-3 flex flex-col gap-2" style={{ animationDelay: "80ms" }}>
-        <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Bulk add (one email per line)</span>
-        <textarea
-          value={bulkEmails}
-          onChange={(e) => setBulkEmails(e.target.value)}
-          placeholder={"alice@example.com\nbob@example.com"}
-          rows={3}
-          className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none resize-y"
-        />
-        <label className="flex items-center gap-2 text-xs text-accent hover:text-accent-hover cursor-pointer self-start">
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 16V4m0 0 4 4m-4-4-4 4" />
-            <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" strokeLinecap="round" />
-          </svg>
-          Upload .csv
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onCsvFile(f);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-text-normal cursor-pointer">
-            <input
-              type="checkbox"
-              checked={bulkSendInvite}
-              onChange={(e) => setBulkSendInvite(e.target.checked)}
-              className="accent-[var(--color-accent)]"
-            />
-            Create accounts and email credentials
-          </label>
+      {canManage && (
+        <div className="animate-fade-up flex items-center gap-2" style={{ animationDelay: "40ms" }}>
           <button
-            onClick={bulkAdd}
-            disabled={bulkBusy}
-            className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+            onClick={() => setInviteOpen(true)}
+            className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white"
           >
-            {bulkBusy ? "Adding…" : "Add all"}
+            + Invite people
           </button>
+          <span className="text-xs text-text-muted">
+            New people get a join link — they create their own account.
+          </span>
         </div>
-        {bulkResult && (
-          <div className="flex flex-col gap-1.5 border-t border-border/40 pt-2">
-            <div className="text-sm text-text-normal flex items-center gap-2">
-              <span>
-                {bulkResult.created.length} created · {bulkResult.alreadyMembers.length} already members
-                {bulkResult.emailed.length > 0 && ` · ${bulkResult.emailed.length} emailed`}
-                {bulkResult.emailErrors.length > 0 && ` · ${bulkResult.emailErrors.length} email errors`}
-              </span>
-              {bulkResult.created.some((c) => c.password) && (
-                <button
-                  onClick={downloadCredentialsCsv}
-                  className="ml-auto shrink-0 px-3 py-1 rounded-lg bg-accent/10 border border-accent/25 text-accent text-xs font-medium hover:bg-accent/20 transition-colors"
-                >
-                  ↓ Download credentials .csv
-                </button>
-              )}
-            </div>
-            {bulkResult.created.some((c) => c.password) && (
-              <div className="overflow-auto max-h-40 rounded-lg bg-bg-input border border-border/40 p-2 text-[11px] font-mono text-text-muted">
-                {bulkResult.created.map((c) => (
-                  <div key={c.email}>
-                    {c.email}
-                    {c.password ? `  /  ${c.password}` : ""}
-                  </div>
-                ))}
-              </div>
-            )}
-            {bulkResult.created.length > 0 && !bulkResult.created.some((c) => c.password) && (
-              <div className="text-xs text-text-muted">Passwords emailed — copy from the invite.</div>
-            )}
-            {bulkResult.emailErrors.map((e) => (
-              <div key={e.email} className="text-xs text-danger">{e.email}: {e.error}</div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
+      {inviteOpen && (
+        <InviteModal
+          orgId={orgId}
+          roles={roles}
+          onClose={() => setInviteOpen(false)}
+        />
+      )}
       <div className="flex flex-col gap-2">
         {members.map((m, i) => (
           <div
@@ -752,27 +677,296 @@ function MembersTab({
               <div className="text-sm font-medium truncate">{m.user.name || m.user.email}</div>
               <div className="text-xs text-text-muted truncate">{m.user.email}</div>
             </div>
-            <select
-              value={m.roleId ?? ""}
-              onChange={(e) => onAssignRole(m.userId, m.teamId, e.target.value || null)}
-              className="bg-bg-input border border-border rounded-lg px-2 py-1.5 text-sm focus:border-accent focus:outline-none cursor-pointer"
-            >
-              <option value="">No role</option>
-              {roles.map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => onRemoveMember(m.userId, m.teamId)}
-              className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-sm px-1"
-              title="Remove member"
-            >
-              ✕
-            </button>
+            {canManage && (
+              <select
+                value={m.roleId ?? ""}
+                onChange={(e) => onAssignRole(m.userId, m.teamId, e.target.value || null)}
+                className="bg-bg-input border border-border rounded-lg px-2 py-1.5 text-sm focus:border-accent focus:outline-none cursor-pointer"
+              >
+                <option value="">No role</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            )}
+            {canManage && (
+              <button
+                onClick={() => onRemoveMember(m.userId, m.teamId)}
+                className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-sm px-1"
+                title="Remove member"
+              >
+                ✕
+              </button>
+            )}
           </div>
         ))}
         {members.length === 0 && (
           <div className="text-sm text-text-muted animate-fade-up">No members yet.</div>
+        )}
+      </div>
+      {me && members.some((m) => m.userId === me.id) && (
+        <div className="pt-3 border-t border-border/40 flex justify-end">
+          <button
+            onClick={leaveOrg}
+            className="text-sm text-danger/80 hover:text-danger transition-colors"
+          >
+            Leave organization
+          </button>
+        </div>
+      )}
+      {canManage && invites.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+            Pending invites
+          </span>
+          {invites.map((inv) => (
+            <div
+              key={inv.id}
+              className="group flex items-center gap-3 px-4 py-2.5 rounded-xl border border-border/40 bg-surface/50 text-sm"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-medium">
+                  {inv.email ?? "Open link — anyone with it can join"}
+                </div>
+                <div className="text-xs text-text-muted">
+                  {[inv.teamName ?? "Organization-wide", inv.roleName, `expires ${new Date(inv.expiresAt).toLocaleDateString()}`]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/join/${inv.token}`);
+                  window.alert("Invite link copied");
+                }}
+                className="shrink-0 px-3 py-1 rounded-lg bg-accent/10 border border-accent/25 text-accent text-xs font-medium hover:bg-accent/20 transition-colors"
+              >
+                Copy link
+              </button>
+              <button
+                onClick={() => revokeInvite(inv.id)}
+                className="shrink-0 text-text-muted hover:text-danger transition-colors text-sm px-1"
+                title="Revoke invite"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InviteModal({
+  orgId,
+  roles,
+  onClose,
+}: {
+  orgId: string;
+  roles: Role[];
+  onClose: () => void;
+}) {
+  const [emails, setEmails] = useState("");
+  const [teamId, setTeamId] = useState("");
+  const [roleId, setRoleId] = useState("");
+  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<{
+    added: string[];
+    invited: { email: string; token: string }[];
+    alreadyMembers: string[];
+    emailErrors: { email: string; error: string }[];
+    emailed: string[];
+    openLink?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/organizations/${orgId}/teams`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setTeams)
+      .catch(() => {});
+  }, [orgId]);
+
+  const scopedRoles = roles.filter((r) => !r.teamId || r.teamId === teamId);
+
+  async function invite(body: Record<string, unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/organizations/${orgId}/invitations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId: teamId || null, roleId: roleId || null, ...body }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "Failed to invite");
+      setResult(d.openLink ? { added: [], invited: [], alreadyMembers: [], emailErrors: [], emailed: [], openLink: d.openLink } : d);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function send() {
+    const list = emails.split(/[\n,;\s]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+    if (list.length === 0) return;
+    invite({ emails: list });
+  }
+
+  function sendOpen() {
+    invite({ open: true });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative animate-pop-in bg-bg-primary w-full max-w-md p-6 rounded-2xl shadow-[0_20px_60px_-20px_rgba(0,0,0,0.7)] border border-border/50 flex flex-col gap-4 max-h-[90vh] overflow-auto">
+        <h2 className="text-lg font-semibold">Invite people</h2>
+        {!result ? (
+          <>
+            <textarea
+              value={emails}
+              onChange={(e) => setEmails(e.target.value)}
+              placeholder={"one@example.com\ntwo@example.com"}
+              rows={3}
+              className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none resize-y"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1 text-xs font-semibold text-text-muted uppercase tracking-wide">
+                Team
+                <select
+                  value={teamId}
+                  onChange={(e) => setTeamId(e.target.value)}
+                  className="bg-bg-input border border-border rounded-lg px-2 py-2 text-sm text-text-normal normal-case tracking-normal focus:border-accent focus:outline-none cursor-pointer"
+                >
+                  <option value="">Organization-wide</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-xs font-semibold text-text-muted uppercase tracking-wide">
+                Role
+                <select
+                  value={roleId}
+                  onChange={(e) => setRoleId(e.target.value)}
+                  className="bg-bg-input border border-border rounded-lg px-2 py-2 text-sm text-text-normal normal-case tracking-normal focus:border-accent focus:outline-none cursor-pointer"
+                >
+                  <option value="">No role</option>
+                  {scopedRoles.map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p className="text-xs text-text-muted -mt-2">
+              People who already have an account are added directly. Everyone else gets a
+              single-use join link valid for 7 days.
+            </p>
+            {error && <p className="text-danger text-sm">{error}</p>}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={sendOpen}
+                disabled={busy}
+                className="text-xs text-accent hover:text-accent-hover transition-colors disabled:opacity-50"
+              >
+                or create an open join link (anyone with it can join)
+              </button>
+              <div className="ml-auto flex gap-2">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-lg border border-border text-sm hover:bg-surface/60 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={send}
+                  disabled={busy || emails.trim() === ""}
+                  className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {busy ? "Inviting…" : "Send invites"}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {result.openLink && (
+              <div className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Open join link:</span>
+                <div className="flex items-center gap-2 bg-bg-input border border-border/40 rounded-lg px-3 py-2">
+                  <code className="flex-1 min-w-0 truncate text-[11px] text-text-muted">
+                    {typeof window !== "undefined" ? `${window.location.origin}/join/${result.openLink}` : ""}
+                  </code>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(`${window.location.origin}/join/${result.openLink}`)}
+                    className="shrink-0 px-3 py-1 rounded-lg bg-accent/10 border border-accent/25 text-accent text-xs font-medium hover:bg-accent/20 transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="text-xs text-text-muted">
+                  Anyone with this link can join — revoke it from the pending list when done.
+                </p>
+              </div>
+            )}
+            {result.added.length > 0 && (
+              <div className="text-sm">
+                <span className="font-medium text-success">Added directly:</span>{" "}
+                <span className="text-text-muted">{result.added.join(", ")}</span>
+              </div>
+            )}
+            {result.invited.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <span className="text-sm font-medium">Join links for new people:</span>
+                {result.invited.map((i) => (
+                  <div
+                    key={i.token}
+                    className="flex items-center gap-2 bg-bg-input border border-border/40 rounded-lg px-3 py-2"
+                  >
+                    <code className="flex-1 min-w-0 truncate text-[11px] text-text-muted">
+                      {i.email}: {`${typeof window !== "undefined" ? window.location.origin : ""}/join/${i.token}`}
+                    </code>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(`${window.location.origin}/join/${i.token}`)}
+                      className="shrink-0 px-3 py-1 rounded-lg bg-accent/10 border border-accent/25 text-accent text-xs font-medium hover:bg-accent/20 transition-colors"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                ))}
+                <p className="text-xs text-text-muted">
+                  Links expire in 7 days and work once per person.
+                </p>
+              </div>
+            )}
+            {result.alreadyMembers.length > 0 && (
+              <div className="text-xs text-warning">
+                Already members: {result.alreadyMembers.join(", ")}
+              </div>
+            )}
+            {result.emailed.length > 0 && (
+              <div className="text-xs text-success">
+                Emailed to: {result.emailed.join(", ")}
+              </div>
+            )}
+            {result.emailErrors.map((e) => (
+              <div key={e.email} className="text-xs text-danger">
+                {e.email}: {e.error}
+              </div>
+            ))}
+            <div className="flex justify-end">
+              <button
+                onClick={onClose}
+                className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white"
+              >
+                Done
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -781,10 +975,12 @@ function MembersTab({
 
 function TemplatesTab({
   templates,
+  canManage,
   onCreate,
   onEdit,
 }: {
   templates: Template[];
+  canManage: boolean;
   onCreate: () => void;
   onEdit: (t: Template) => void;
 }) {
@@ -797,12 +993,14 @@ function TemplatesTab({
             {templates.length}
           </span>
         </div>
-        <button
-          onClick={onCreate}
-          className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white"
-        >
-          New template
-        </button>
+        {canManage && (
+          <button
+            onClick={onCreate}
+            className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white"
+          >
+            New template
+          </button>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         {templates.map((t, i) => {
@@ -815,7 +1013,7 @@ function TemplatesTab({
               style={{ animationDelay: `${Math.min(i * 30, 250)}ms` }}
             >
               <span className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-[#6b76ff] to-[#3d49e8] flex items-center justify-center text-white text-xs shadow-[0_2px_8px_-2px_rgba(88,101,242,0.6)]">
-                📄
+                ðŸ“„
               </span>
               <span className="flex-1 min-w-0">
                 <span className="block text-sm font-medium truncate">{t.name}</span>

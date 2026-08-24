@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { renderTemplate } from "@/lib/render-pdf";
+import { renderTemplate, defaultTemplateSource } from "@/lib/render-pdf";
+import DualDateInput from "@/app/dual-date-input";
+import { useMyPermissions } from "@/app/use-my-permissions";
 
 type Field =
   | { name: string; label: string; type: "text" }
@@ -21,6 +23,7 @@ export default function MeetingDetailPage() {
   const [meeting, setMeeting] = useState<{
     id: string; orgId: string; title: string; description: string | null;
     scheduledAt: string;
+    teamIds?: string[];
   } | null>(null);
   const [template, setTemplate] = useState<{ id: string; name: string; fields: Field[] } | null>(null);
   const [templateSource, setTemplateSource] = useState<string | null>(null);
@@ -29,6 +32,9 @@ export default function MeetingDetailPage() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [teamMembers, setTeamMembers] = useState<{ user: { name: string }; roleName: string | null; postRole?: string | null }[]>([]);
+  const [minutesExists, setMinutesExists] = useState(false);
+  const [orgTemplates, setOrgTemplates] = useState<{ id: string; name: string }[]>([]);
 
   const [shareOpen, setShareOpen] = useState(false);
   const [shareEmails, setShareEmails] = useState("");
@@ -42,12 +48,51 @@ export default function MeetingDetailPage() {
   const [shareMsg, setShareMsg] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
 
+  const { can } = useMyPermissions(meeting?.orgId);
+  const canEdit = can("edit_meeting");
+  const canExport = can("export_minutes");
+
   useEffect(() => {
     fetch(`/api/meetings/${meetingId}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d) setMeeting(d.meeting ?? null); })
       .catch(() => setError("Failed to load meeting"));
   }, [meetingId]);
+
+  // The meeting's team's members — one-click source for attendance tables.
+  const orgId = meeting?.orgId;
+  const firstTeamId = meeting?.teamIds?.[0];
+  useEffect(() => {
+    if (!orgId) return;
+    const url = `/api/organizations/${orgId}/members`;
+    if (!firstTeamId) {
+      // No team → org-wide roster is the whole list.
+      fetch(url)
+        .then((r) => (r.ok ? r.json() : []))
+        .then(setTeamMembers)
+        .catch(() => {});
+      return;
+    }
+    // Team meeting: team members + org-wide members (secretary etc.), team
+    // role winning when a user holds both.
+    Promise.all([
+      fetch(`${url}?teamId=${firstTeamId}`).then((r) => (r.ok ? r.json() : [])),
+      fetch(url).then((r) => (r.ok ? r.json() : [])),
+    ])
+      .then(([teamRows, allRows]) => {
+        // समिति पद only comes from a role held in THIS meeting's team;
+        // org-wide roles (Admin/Secretary) are access levels, not posts.
+        const byUser = new Map<string, { user: { name: string }; roleName: string | null; postRole: string | null }>();
+        for (const row of allRows) byUser.set(row.userId, { user: row.user, roleName: row.roleName, postRole: null });
+        for (const row of teamRows) {
+          const entry = byUser.get(row.userId);
+          if (entry) entry.postRole = row.roleName;
+          else byUser.set(row.userId, { user: row.user, roleName: row.roleName, postRole: row.roleName });
+        }
+        setTeamMembers([...byUser.values()]);
+      })
+      .catch(() => {});
+  }, [orgId, firstTeamId]);
 
   useEffect(() => {
     fetch(`/api/meetings/${meetingId}/minutes`)
@@ -58,12 +103,69 @@ export default function MeetingDetailPage() {
         setTemplateSource(d.templateSource);
         setContent(d.content ?? {});
         setStatus(d.minutes?.status ?? "draft");
+        setMinutesExists(!!d.minutes);
       })
       .catch(() => setError("Failed to load minutes"));
   }, [meetingId]);
 
+  // Freeform meeting: offer the org's templates so one can be attached after
+  // scheduling. Only until minutes exist (the API enforces the same window).
+  useEffect(() => {
+    if (!orgId || template || minutesExists || !canEdit) return;
+    fetch(`/api/organizations/${orgId}/templates`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setOrgTemplates)
+      .catch(() => {});
+  }, [orgId, template, minutesExists, canEdit]);
+
+  async function chooseTemplate(templateId: string) {
+    setError("");
+    const res = await fetch(`/api/meetings/${meetingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ templateId }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setError(d.error || "Failed to attach template");
+      return;
+    }
+    const d = await fetch(`/api/meetings/${meetingId}/minutes`).then((r) => (r.ok ? r.json() : null));
+    if (d) {
+      setTemplate(d.template);
+      setTemplateSource(d.templateSource);
+      setContent(d.content ?? {});
+      setStatus(d.minutes?.status ?? "draft");
+      setMinutesExists(!!d.minutes);
+    }
+  }
+
   function setField(name: string, value: unknown) {
     setContent((prev) => ({ ...prev, [name]: value }));
+  }
+
+  // One-click attendance: append a row per team member, skipping names that
+  // are already listed.
+  function addTeamMembersToField(fieldName: string, columns: { key: string; label: string }[]) {
+    const rows = Array.isArray(content[fieldName]) ? (content[fieldName] as Record<string, string>[]) : [];
+    const existing = new Set(
+      rows.map((r) => (r.name ?? "").trim().toLowerCase()).filter(Boolean),
+    );
+    const additions = teamMembers
+      .filter((m) => !existing.has(m.user.name.trim().toLowerCase()))
+      .map((m) => {
+        const row: Record<string, string> = {};
+        for (const col of columns) {
+          row[col.key] =
+            col.key === "name"
+              ? m.user.name
+              : col.key === "post"
+                ? (m.postRole ?? "")
+                : "";
+        }
+        return row;
+      });
+    if (additions.length > 0) setField(fieldName, [...rows, ...additions]);
   }
 
   async function save() {
@@ -87,14 +189,12 @@ export default function MeetingDetailPage() {
   }
 
   function showPreview() {
-    if (!templateSource) return;
-    const html = renderTemplate(templateSource, content);
+    const html = renderTemplate(source, content);
     setPreviewHtml(html.replace(/^[\s\S]*<body[^>]*>/i, "").replace(/<\/body>\s*<\/html>\s*$/i, ""));
   }
 
   async function exportPdf() {
-    if (!templateSource) return;
-    const html = renderTemplate(templateSource, content);
+    const html = renderTemplate(source, content);
     const wrapper = document.createElement("div");
     wrapper.style.width = "210mm";
     wrapper.style.padding = "0";
@@ -184,6 +284,10 @@ export default function MeetingDetailPage() {
     );
   }
 
+  // Meetings without an attached template render through the generic
+  // document layout instead of hiding Preview/Export.
+  const source = templateSource ?? defaultTemplateSource(meeting.title, content, template?.fields);
+
   return (
     <div className="h-screen flex flex-col bg-bg-primary">
       <header className="frost h-12 shrink-0 flex items-center justify-between px-4 border-b border-border/50">
@@ -206,32 +310,34 @@ export default function MeetingDetailPage() {
           <span className={`text-xs px-2.5 py-1 rounded-full border ${status === "published" ? "bg-success/15 border-success/25 text-success" : "bg-surface border-border/50 text-text-muted"}`}>
             {status === "published" ? "Published" : "Draft"}
           </span>
-          {templateSource && (
+          <button onClick={showPreview} className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95">
+            Preview
+          </button>
+          {canExport && (
             <>
-              <button onClick={showPreview} className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95">
-                Preview
-              </button>
               <button onClick={exportPdf} className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                   <path d="M8 2v8M4.5 7L8 10.5 11.5 7M2.5 13h11" />
                 </svg>
                 Export PDF
               </button>
+              <button
+                onClick={openShare}
+                className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95"
+              >
+                Share
+              </button>
             </>
           )}
-          <button
-            onClick={openShare}
-            className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95"
-          >
-            Share
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
+          {canEdit && (
+            <button
+              onClick={save}
+              disabled={saving}
+              className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          )}
         </div>
       </header>
 
@@ -321,20 +427,55 @@ export default function MeetingDetailPage() {
           </div>
 
           {!template ? (
-            <div className="text-sm text-text-muted">This meeting has no template.</div>
+            canEdit && !minutesExists ? (
+              <div className="animate-fade-up card-hover bg-surface/50 border border-border/40 rounded-xl p-4">
+                <p className="text-sm font-medium text-text-normal mb-2.5">Pick a template to start the minutes</p>
+                {orgTemplates.length > 0 ? (
+                  <div className="flex gap-2 flex-wrap">
+                    {orgTemplates.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => chooseTemplate(t.id)}
+                        className="px-3 py-1.5 text-sm rounded-lg bg-bg-input border border-border hover:border-accent hover:text-accent transition-colors"
+                      >
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-text-muted">No templates in this organization yet — create one in Settings → Templates.</p>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm text-text-muted">This meeting has no template.</div>
+            )
           ) : template.fields.length === 0 ? (
             <div className="text-sm text-text-muted">This template has no fields defined.</div>
           ) : (
-            <div className="flex flex-col gap-4">
+            // Tailwind preflight strips fieldset chrome; disabled blocks input
+            // for members without edit_meeting so they can't type into a void.
+            <fieldset disabled={!canEdit} className="flex flex-col gap-4">
               {template.fields.map((field, i) => (
                 <div key={field.name} className="animate-fade-up card-hover bg-surface/50 border border-border/40 rounded-xl p-4 flex flex-col gap-2" style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}>
                   <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
                     {field.label}
                   </label>
-                  <FieldInput field={field} value={content[field.name]} onChange={(v) => setField(field.name, v)} />
+                  <FieldInput
+                    field={field}
+                    value={content[field.name]}
+                    onChange={(v) => setField(field.name, v)}
+                    onAddTeamMembers={
+                      canEdit &&
+                      field.type === "table" &&
+                      field.config.columns.some((c) => c.key === "name") &&
+                      teamMembers.length > 0
+                        ? () => addTeamMembersToField(field.name, field.config.columns)
+                        : undefined
+                    }
+                  />
                 </div>
               ))}
-            </div>
+            </fieldset>
           )}
         </div>
       </main>
@@ -346,10 +487,12 @@ function FieldInput({
   field,
   value,
   onChange,
+  onAddTeamMembers,
 }: {
   field: Field;
   value: unknown;
   onChange: (v: unknown) => void;
+  onAddTeamMembers?: () => void;
 }) {
   const inputClass = "bg-bg-input border border-border rounded px-2 py-1.5 text-sm focus:border-accent focus:outline-none";
 
@@ -361,7 +504,7 @@ function FieldInput({
     case "number":
       return <input className={inputClass} type="number" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />;
     case "date":
-      return <input className={inputClass} type="date" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />;
+      return <DualDateInput value={String(value ?? "")} onChange={(v) => onChange(v)} />;
     case "boolean":
       return (
         <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -398,16 +541,27 @@ function FieldInput({
               <button onClick={() => onChange(rows.filter((_, i) => i !== ri))} className="text-text-muted hover:text-danger text-sm px-1">✕</button>
             </div>
           ))}
-          <button
-            onClick={() => {
-              const newRow: Record<string, string> = {};
-              for (const col of columns) newRow[col.key] = "";
-              onChange([...rows, newRow]);
-            }}
-            className="self-start text-sm text-text-muted hover:text-text-normal"
-          >
-            + Add row
-          </button>
+          <div className="flex gap-3">
+            {onAddTeamMembers && (
+              <button
+                onClick={onAddTeamMembers}
+                className="self-start text-sm text-accent hover:text-accent-hover transition-colors"
+                title="Add every member of this meeting's team as a row"
+              >
+                + Add team members
+              </button>
+            )}
+            <button
+              onClick={() => {
+                const newRow: Record<string, string> = {};
+                for (const col of columns) newRow[col.key] = "";
+                onChange([...rows, newRow]);
+              }}
+              className="self-start text-sm text-text-muted hover:text-text-normal"
+            >
+              + Add row
+            </button>
+          </div>
         </div>
       );
     }
