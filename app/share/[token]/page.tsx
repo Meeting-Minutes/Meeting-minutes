@@ -2,30 +2,12 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { shares, minutes, meetings, templates } from "@/db/schema";
-import { renderTemplate } from "@/lib/render-pdf";
+import { renderTemplate, defaultTemplateSource } from "@/lib/render-pdf";
 
-function formatValue(v: unknown): string {
-  if (Array.isArray(v)) {
-    const cols = Object.keys(v[0] ?? {});
-    return v
-      .map((row) => cols.map((c) => (row as Record<string, unknown>)[c]).join(" | "))
-      .join("\n");
-  }
-  return String(v ?? "");
-}
-
-function Fallback({ title, content }: { title: string; content: Record<string, unknown> }) {
-  return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>
-      {Object.entries(content).map(([k, v]) => (
-        <div key={k} className="mb-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">{k}</div>
-          <div className="text-sm whitespace-pre-wrap text-gray-800">{formatValue(v)}</div>
-        </div>
-      ))}
-    </div>
-  );
+function stripDoc(html: string) {
+  return html
+    .replace(/^[\s\S]*<body[^>]*>/i, "")
+    .replace(/<\/body>\s*<\/html>\s*$/i, "");
 }
 
 export default async function SharePage({
@@ -61,18 +43,17 @@ export default async function SharePage({
 
   const content = (minutesRow?.content ?? {}) as Record<string, unknown>;
   const title = meeting?.title ?? "Shared minutes";
+  const fields = (template?.fields ?? []) as Parameters<typeof defaultTemplateSource>[2];
 
   let bodyHtml: string | null = null;
   if (template?.texSource) {
     try {
-      const source = template.texSource;
-      bodyHtml = renderTemplate(source, content)
-        .replace(/^[\s\S]*<body[^>]*>/i, "")
-        .replace(/<\/body>\s*<\/html>\s*$/i, "");
+      bodyHtml = stripDoc(renderTemplate(template.texSource, content));
     } catch {
-      // template file missing — fall back to field dump
+      // broken template — fall through to generic layout
     }
   }
+  bodyHtml ??= stripDoc(defaultTemplateSource(title, content, fields));
 
   return (
     <div className="min-h-screen bg-bg-primary flex flex-col">
@@ -84,11 +65,7 @@ export default async function SharePage({
       </header>
       <main className="flex-1 overflow-y-auto p-8">
         <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-sm border border-border/40 p-8">
-          {bodyHtml ? (
-            <div dangerouslySetInnerHTML={{ __html: bodyHtml }} />
-          ) : (
-            <Fallback title={title} content={content} />
-          )}
+          <div dangerouslySetInnerHTML={{ __html: bodyHtml }} />
         </div>
       </main>
     </div>

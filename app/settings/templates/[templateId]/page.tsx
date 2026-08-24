@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
+import { useMyPermissions } from "@/app/use-my-permissions";
 
 const FIELD_TYPES = [
   { value: "text", label: "Text" },
@@ -45,6 +46,10 @@ export default function TemplateEditorPage({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [isNew, setIsNew] = useState(false);
+
+  // UI-only gate; the templates API enforces manage_templates for real.
+  const { can } = useMyPermissions(orgId || null);
+  const canManage = can("manage_templates");
 
   useEffect(() => {
     searchParams.then((sp) => {
@@ -154,13 +159,15 @@ export default function TemplateEditorPage({
           {isNew ? "New Template" : "Edit Template"}
         </span>
         <div className="flex-1" />
-        <button
-          onClick={save}
-          disabled={saving}
-          className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-        >
-          {saving ? "Saving…" : "Save Template"}
-        </button>
+        {canManage && (
+          <button
+            onClick={save}
+            disabled={saving}
+            className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+          >
+            {saving ? "Saving…" : "Save Template"}
+          </button>
+        )}
       </header>
 
       <main className="flex-1 overflow-y-auto">
@@ -174,8 +181,9 @@ export default function TemplateEditorPage({
               <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">Name</label>
               <input
                 value={name}
+                disabled={!canManage}
                 onChange={(e) => setName(e.target.value)}
-                className="bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                className="bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none disabled:opacity-60"
                 placeholder="Standard Committee Meeting"
               />
             </div>
@@ -184,25 +192,31 @@ export default function TemplateEditorPage({
               <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">Description</label>
               <textarea
                 value={description}
+                disabled={!canManage}
                 onChange={(e) => setDescription(e.target.value)}
-                className="bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none min-h-16 resize-y"
+                className="bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none min-h-16 resize-y disabled:opacity-60"
               />
             </div>
           </div>
 
-          {/* --- fields --- */}
-          <div className="animate-fade-up flex flex-col gap-3" style={{ animationDelay: "60ms" }}>
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
-                Fields
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20 text-accent font-medium normal-case tracking-normal">
-                  {fields.length}
+          {/* Tailwind preflight strips fieldset chrome; disabled blocks editing
+              for members without manage_templates. */}
+          <fieldset disabled={!canManage} className="contents">
+            {/* --- fields --- */}
+            <div className="animate-fade-up flex flex-col gap-3" style={{ animationDelay: "60ms" }}>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
+                  Fields
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/10 border border-accent/20 text-accent font-medium normal-case tracking-normal">
+                    {fields.length}
+                  </span>
                 </span>
-              </span>
-              <button onClick={addField} className="btn-primary px-3 py-1.5 rounded-lg text-xs font-semibold text-white">
-                + Add field
-              </button>
-            </div>
+                {canManage && (
+                  <button onClick={addField} className="btn-primary px-3 py-1.5 rounded-lg text-xs font-semibold text-white">
+                    + Add field
+                  </button>
+                )}
+              </div>
 
             {fields.map((field, i) => (
               <div
@@ -332,8 +346,9 @@ export default function TemplateEditorPage({
               ref={fileInputRef}
               type="file"
               accept=".hbs,.html"
+              disabled={!canManage}
               onChange={(e) => setTexFile(e.target.files?.[0] ?? null)}
-              className="text-sm text-text-muted file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-accent/30 file:text-sm file:bg-accent/10 file:text-accent hover:file:bg-accent/20 hover:file:border-accent/50 transition-all file:transition-all cursor-pointer"
+              className="text-sm text-text-muted file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-accent/30 file:text-sm file:bg-accent/10 file:text-accent hover:file:bg-accent/20 hover:file:border-accent/50 transition-all file:transition-all cursor-pointer disabled:opacity-60"
             />
             {texFile && (
               <span className="text-xs text-accent">New file: {texFile.name}</span>
@@ -347,6 +362,7 @@ export default function TemplateEditorPage({
               <code>{`{{#if (has list)}}`}</code>.
             </p>
           </div>
+          </fieldset>
 
           {/* --- template source preview --- */}
           {templateSource && (

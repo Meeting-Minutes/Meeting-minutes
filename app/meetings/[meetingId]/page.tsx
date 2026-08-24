@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { renderTemplate } from "@/lib/render-pdf";
+import { renderTemplate, defaultTemplateSource } from "@/lib/render-pdf";
+import DualDateInput from "@/app/dual-date-input";
+import { useMyPermissions } from "@/app/use-my-permissions";
 
 type Field =
   | { name: string; label: string; type: "text" }
@@ -41,6 +43,10 @@ export default function MeetingDetailPage() {
   >([]);
   const [shareMsg, setShareMsg] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+
+  const { can } = useMyPermissions(meeting?.orgId);
+  const canEdit = can("edit_meeting");
+  const canExport = can("export_minutes");
 
   useEffect(() => {
     fetch(`/api/meetings/${meetingId}`)
@@ -87,14 +93,12 @@ export default function MeetingDetailPage() {
   }
 
   function showPreview() {
-    if (!templateSource) return;
-    const html = renderTemplate(templateSource, content);
+    const html = renderTemplate(source, content);
     setPreviewHtml(html.replace(/^[\s\S]*<body[^>]*>/i, "").replace(/<\/body>\s*<\/html>\s*$/i, ""));
   }
 
   async function exportPdf() {
-    if (!templateSource) return;
-    const html = renderTemplate(templateSource, content);
+    const html = renderTemplate(source, content);
     const wrapper = document.createElement("div");
     wrapper.style.width = "210mm";
     wrapper.style.padding = "0";
@@ -184,6 +188,10 @@ export default function MeetingDetailPage() {
     );
   }
 
+  // Meetings without an attached template render through the generic
+  // document layout instead of hiding Preview/Export.
+  const source = templateSource ?? defaultTemplateSource(meeting.title, content, template?.fields);
+
   return (
     <div className="h-screen flex flex-col bg-bg-primary">
       <header className="frost h-12 shrink-0 flex items-center justify-between px-4 border-b border-border/50">
@@ -206,32 +214,34 @@ export default function MeetingDetailPage() {
           <span className={`text-xs px-2.5 py-1 rounded-full border ${status === "published" ? "bg-success/15 border-success/25 text-success" : "bg-surface border-border/50 text-text-muted"}`}>
             {status === "published" ? "Published" : "Draft"}
           </span>
-          {templateSource && (
+          <button onClick={showPreview} className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95">
+            Preview
+          </button>
+          {canExport && (
             <>
-              <button onClick={showPreview} className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95">
-                Preview
-              </button>
               <button onClick={exportPdf} className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white flex items-center gap-1.5">
                 <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                   <path d="M8 2v8M4.5 7L8 10.5 11.5 7M2.5 13h11" />
                 </svg>
                 Export PDF
               </button>
+              <button
+                onClick={openShare}
+                className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95"
+              >
+                Share
+              </button>
             </>
           )}
-          <button
-            onClick={openShare}
-            className="px-4 py-1.5 rounded-lg border border-border text-sm text-text-normal hover:bg-surface/50 hover:border-accent/40 transition-all active:scale-95"
-          >
-            Share
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
+          {canEdit && (
+            <button
+              onClick={save}
+              disabled={saving}
+              className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          )}
         </div>
       </header>
 
@@ -325,7 +335,9 @@ export default function MeetingDetailPage() {
           ) : template.fields.length === 0 ? (
             <div className="text-sm text-text-muted">This template has no fields defined.</div>
           ) : (
-            <div className="flex flex-col gap-4">
+            // Tailwind preflight strips fieldset chrome; disabled blocks input
+            // for members without edit_meeting so they can't type into a void.
+            <fieldset disabled={!canEdit} className="flex flex-col gap-4">
               {template.fields.map((field, i) => (
                 <div key={field.name} className="animate-fade-up card-hover bg-surface/50 border border-border/40 rounded-xl p-4 flex flex-col gap-2" style={{ animationDelay: `${Math.min(i * 30, 300)}ms` }}>
                   <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
@@ -334,7 +346,7 @@ export default function MeetingDetailPage() {
                   <FieldInput field={field} value={content[field.name]} onChange={(v) => setField(field.name, v)} />
                 </div>
               ))}
-            </div>
+            </fieldset>
           )}
         </div>
       </main>
@@ -361,7 +373,7 @@ function FieldInput({
     case "number":
       return <input className={inputClass} type="number" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />;
     case "date":
-      return <input className={inputClass} type="date" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />;
+      return <DualDateInput value={String(value ?? "")} onChange={(v) => onChange(v)} />;
     case "boolean":
       return (
         <label className="flex items-center gap-2 text-sm cursor-pointer">

@@ -3,12 +3,23 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "./theme-toggle";
+import DualDateInput from "./dual-date-input";
+import { useMyPermissions } from "./use-my-permissions";
 
 type Org = { id: string; name: string; description?: string | null; slug: string };
 type Team = { id: string; name: string; description?: string | null };
 type User = { id: string; email: string; name: string };
 type Member = { id: string; userId: string; teamId: string | null; createdAt: string; user: User };
-type Meeting = { id: string; title: string; description: string | null; scheduledAt: string; location: string | null };
+type Meeting = {
+  id: string;
+  title: string;
+  description: string | null;
+  scheduledAt: string;
+  location: string | null;
+  orgName?: string | null;
+  status?: string | null;
+};
+type Feed = { upcoming: Meeting[]; recent: Meeting[] };
 
 function ModalOverlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
@@ -86,7 +97,7 @@ function FormModal({
   );
 }
 
-function MemberRow({ member, onRemove }: { member: Member; onRemove: () => void }) {
+function MemberRow({ member, onRemove, canManage }: { member: Member; onRemove: () => void; canManage: boolean }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-hover/50 transition-colors group">
       <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent text-sm font-semibold shrink-0">
@@ -96,19 +107,21 @@ function MemberRow({ member, onRemove }: { member: Member; onRemove: () => void 
         <p className="text-sm font-medium text-text-normal truncate">{member.user.name}</p>
         <p className="text-xs text-text-muted truncate">{member.user.email}</p>
       </div>
-      <button
-        onClick={onRemove}
-        className="text-xs text-text-muted hover:text-danger transition-colors opacity-0 group-hover:opacity-100 px-1.5 py-1"
-        title="Remove"
-      >
-        Remove
-      </button>
+      {canManage && (
+        <button
+          onClick={onRemove}
+          className="text-xs text-text-muted hover:text-danger transition-colors opacity-0 group-hover:opacity-100 px-1.5 py-1"
+          title="Remove"
+        >
+          Remove
+        </button>
+      )}
     </div>
   );
 }
 
 function MembersSection({
-  members, teamId, addEmail, onAddEmailChange, onAdd, onRemove, error,
+  members, teamId, addEmail, onAddEmailChange, onAdd, onRemove, error, canManage,
 }: {
   members: Member[];
   teamId: string | null;
@@ -117,6 +130,7 @@ function MembersSection({
   onAdd: () => void;
   onRemove: (userId: string, teamId: string | null) => void;
   error: string;
+  canManage: boolean;
 }) {
   return (
     <div className="card-hover bg-surface rounded-xl border border-border/50 p-4">
@@ -129,9 +143,10 @@ function MembersSection({
       </h3>
       <div className="space-y-0.5">
         {members.map((m) => (
-          <MemberRow key={m.id} member={m} onRemove={() => onRemove(m.userId, teamId)} />
+          <MemberRow key={m.id} member={m} canManage={canManage} onRemove={() => onRemove(m.userId, teamId)} />
         ))}
       </div>
+      {canManage && (
       <div className="flex gap-2 mt-3 pt-3 border-t border-border/50">
         <input
           value={addEmail}
@@ -148,7 +163,8 @@ function MembersSection({
           Add
         </button>
       </div>
-      {error && <p className="text-danger text-xs mt-2">{error}</p>}
+      )}
+      {canManage && error && <p className="text-danger text-xs mt-2">{error}</p>}
     </div>
   );
 }
@@ -176,21 +192,39 @@ function MeetingCard({ meeting, upcoming }: { meeting: Meeting; upcoming: boolea
         {meeting.description && (
           <p className="text-xs text-text-muted mt-0.5 leading-relaxed line-clamp-2">{meeting.description}</p>
         )}
-        <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1.5">
-          <svg className="w-3 h-3 text-text-muted/60" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-            <rect x="1.5" y="2.5" width="11" height="10" rx="1.5" />
-            <line x1="1.5" y1="5.5" x2="12.5" y2="5.5" />
-            <line x1="4.5" y1="1" x2="4.5" y2="4" />
-            <line x1="9.5" y1="1" x2="9.5" y2="4" />
-          </svg>
-          {new Date(meeting.scheduledAt).toLocaleDateString("en-US", {
-            weekday: "short", month: "short", day: "numeric",
-          })}
-          {" at "}
-          {new Date(meeting.scheduledAt).toLocaleTimeString("en-US", {
-            hour: "numeric", minute: "2-digit",
-          })}
-        </p>
+        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+          <p className="text-xs text-text-muted flex items-center gap-1.5">
+            <svg className="w-3 h-3 text-text-muted/60" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <rect x="1.5" y="2.5" width="11" height="10" rx="1.5" />
+              <line x1="1.5" y1="5.5" x2="12.5" y2="5.5" />
+              <line x1="4.5" y1="1" x2="4.5" y2="4" />
+              <line x1="9.5" y1="1" x2="9.5" y2="4" />
+            </svg>
+            {new Date(meeting.scheduledAt).toLocaleDateString("en-US", {
+              weekday: "short", month: "short", day: "numeric",
+            })}
+            {" at "}
+            {new Date(meeting.scheduledAt).toLocaleTimeString("en-US", {
+              hour: "numeric", minute: "2-digit",
+            })}
+          </p>
+          {!upcoming && meeting.status && (
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
+                meeting.status === "published"
+                  ? "bg-success/15 border-success/25 text-success"
+                  : "bg-accent/10 border-accent/25 text-accent"
+              }`}
+            >
+              {meeting.status === "published" ? "Published" : "Draft"}
+            </span>
+          )}
+          {meeting.orgName && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-hover border border-border/50 text-text-muted">
+              {meeting.orgName}
+            </span>
+          )}
+        </div>
         {meeting.location && (
           <p className="text-xs text-text-muted mt-0.5 flex items-center gap-1.5">
             <svg className="w-3 h-3 text-text-muted/60" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -231,6 +265,8 @@ export default function Home() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [feed, setFeed] = useState<Feed>({ upcoming: [], recent: [] });
+  const [orgTeams, setOrgTeams] = useState<Record<string, Team[]>>({});
   const [showSchedule, setShowSchedule] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showDateFilter, setShowDateFilter] = useState(false);
@@ -250,6 +286,12 @@ export default function Home() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailResult, setEmailResult] = useState("");
 
+  // UI-only permission gate — the API enforces the real checks; this just
+  // hides controls the user has no key for.
+  const { can } = useMyPermissions(activeOrgId);
+  const canManageTeams = can("manage_teams");
+  const canSchedule = can("create_meeting", activeTeamId);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : { user: null }))
@@ -258,13 +300,29 @@ export default function Home() {
 
   useEffect(() => {
     if (!user) return;
+    // Land on the personal dashboard — entering an org is an explicit click.
     fetch("/api/organizations")
       .then((r) => (r.ok ? r.json() : []))
-      .then((data) => {
-        setOrgs(data);
-        if (data.length > 0) setActiveOrgId((prev) => prev ?? data[0].id);
-      });
+      .then(setOrgs);
   }, [user]);
+
+  useEffect(() => {
+    if (!user || activeOrgId) return;
+    fetch("/api/meetings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setFeed(d));
+  }, [user, activeOrgId]);
+
+  useEffect(() => {
+    if (!user || activeOrgId || orgs.length === 0) return;
+    Promise.all(
+      orgs.map((o) =>
+        fetch(`/api/organizations/${o.id}/teams`).then((r) => (r.ok ? r.json() : [])),
+      ),
+    ).then((lists) =>
+      setOrgTeams(Object.fromEntries(orgs.map((o, i) => [o.id, lists[i]]))),
+    );
+  }, [user, activeOrgId, orgs]);
 
   // ponytail: no reset branch here for the falsy-org case — state already
   // starts empty, and every place activeOrgId can become falsy-then-set
@@ -472,6 +530,21 @@ export default function Home() {
     <div className="flex h-screen overflow-hidden">
       {/* Server bar */}
       <nav className="w-18 bg-bg-tertiary flex flex-col items-center gap-1.5 py-3 shrink-0">
+        <button
+          onClick={() => setActiveOrgId(null)}
+          title="Home"
+          className={`group relative w-12 h-12 rounded-2xl transition-all duration-200 ease-out flex items-center justify-center hover:rounded-xl active:scale-95 ${
+            !activeOrgId
+              ? "bg-gradient-to-br from-[#6b76ff] to-[#3d49e8] text-white shadow-[0_4px_14px_-4px_rgba(88,101,242,0.7)]"
+              : "bg-bg-secondary text-text-muted hover:bg-accent hover:text-white"
+          }`}
+        >
+          <span className={`pill h-0 opacity-0 ${!activeOrgId ? "!h-10 opacity-100" : "group-hover:!h-5 group-hover:opacity-100"}`} />
+          <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 8.5L10 2.5l7 6v8a1 1 0 0 1-1 1h-4v-5h-4v5H4a1 1 0 0 1-1-1z" />
+          </svg>
+        </button>
+        {orgs.length > 0 && <div className="w-8 h-px bg-border/50 my-1" />}
         {orgs.map((org) => (
           <button
             key={org.id}
@@ -529,12 +602,14 @@ export default function Home() {
                 >
                   ⚙ Settings
                 </button>
-                <button
-                  onClick={() => { setShowOrgMenu(false); setError(""); setShowNewTeam(true); }}
-                  className="w-full text-left px-3 py-1.5 text-sm text-text-muted hover:bg-surface/60 transition-colors"
-                >
-                  + New team
-                </button>
+                {canManageTeams && (
+                  <button
+                    onClick={() => { setShowOrgMenu(false); setError(""); setShowNewTeam(true); }}
+                    className="w-full text-left px-3 py-1.5 text-sm text-text-muted hover:bg-surface/60 transition-colors"
+                  >
+                    + New team
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -566,19 +641,36 @@ export default function Home() {
                   <span className="truncate text-left">{t.name}</span>
                 </button>
               ))}
-              <button
-                onClick={() => { setError(""); setShowNewTeam(true); }}
-                className="group w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-text-muted hover:bg-success/10 hover:text-success transition-all duration-150 mt-0.5"
-              >
-                <span className="text-lg leading-none text-text-muted/60 group-hover:text-success transition-colors shrink-0">+</span>
-                Add team
-              </button>
+              {canManageTeams && (
+                <button
+                  onClick={() => { setError(""); setShowNewTeam(true); }}
+                  className="group w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-text-muted hover:bg-success/10 hover:text-success transition-all duration-150 mt-0.5"
+                >
+                  <span className="text-lg leading-none text-text-muted/60 group-hover:text-success transition-colors shrink-0">+</span>
+                  Add team
+                </button>
+              )}
             </>
           )}
-          {!activeOrgId && (
-            <p className="text-sm text-text-muted px-2 mt-2">
-              {user ? "Create an organization to get started." : "Sign in to get started."}
-            </p>
+          {!activeOrgId && user && (
+            <div className="px-2 mt-2">
+              <p className="text-[10px] font-semibold text-text-muted uppercase tracking-widest mb-1.5 px-2">Recent</p>
+              {feed.recent.slice(0, 4).map((m) => (
+                <a
+                  key={m.id}
+                  href={`/meetings/${m.id}`}
+                  className="block px-2 py-1.5 rounded-lg text-xs text-text-muted hover:text-text-normal hover:bg-surface/50 transition-colors truncate"
+                >
+                  {m.title}
+                </a>
+              ))}
+              {feed.recent.length === 0 && (
+                <p className="text-xs text-text-muted px-2">Meetings will appear here.</p>
+              )}
+            </div>
+          )}
+          {!activeOrgId && !user && (
+            <p className="text-sm text-text-muted px-2 mt-2">Sign in to get started.</p>
           )}
         </div>
         {user && (
@@ -624,18 +716,22 @@ export default function Home() {
               <span className="font-semibold text-[15px] text-text-normal flex items-center gap-1.5">
                 <span className="text-accent">#</span> {activeTeam.name}
               </span>
-              <button
-                onClick={() => { setError(""); setEditingTeam(activeTeam); }}
-                className="ml-auto text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
-              >
-                ✎ Edit
-              </button>
-              <button
-                onClick={() => { setError(""); setEmailResult(""); setShowEmailTeam(true); }}
-                className="text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
-              >
-                ✉ Email team
-              </button>
+              {canManageTeams && (
+                <button
+                  onClick={() => { setError(""); setEditingTeam(activeTeam); }}
+                  className="ml-auto text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
+                >
+                  ✎ Edit
+                </button>
+              )}
+              {can("manage_members", activeTeamId) && (
+                <button
+                  onClick={() => { setError(""); setEmailResult(""); setShowEmailTeam(true); }}
+                  className="text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
+                >
+                  ✉ Email team
+                </button>
+              )}
             </>
           ) : activeOrg ? (
             <>
@@ -645,12 +741,14 @@ export default function Home() {
                 </span>
                 {activeOrg.name}
               </span>
-              <button
-                onClick={() => { setError(""); setEditingOrg(activeOrg); }}
-                className="ml-auto text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
-              >
-                ✎ Edit
-              </button>
+              {can("manage_org") && (
+                <button
+                  onClick={() => { setError(""); setEditingOrg(activeOrg); }}
+                  className="ml-auto text-xs text-text-muted hover:text-text-normal transition-all px-2.5 py-1 rounded-md hover:bg-surface/50"
+                >
+                  ✎ Edit
+                </button>
+              )}
             </>
           ) : (
             <span className="text-sm text-text-muted">No organization selected</span>
@@ -815,20 +913,22 @@ export default function Home() {
                   );
                 })()}
 
-                <button
-                  onClick={() => { setError(""); setShowSchedule(true); }}
-                  className="btn-primary px-5 py-2.5 text-sm font-semibold text-white rounded-xl flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                    <rect x="1.5" y="3" width="13" height="11.5" rx="1.5" />
-                    <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" />
-                    <line x1="5" y1="1" x2="5" y2="4.5" />
-                    <line x1="11" y1="1" x2="11" y2="4.5" />
-                    <line x1="8" y1="9.5" x2="8" y2="13" />
-                    <line x1="6.25" y1="11.25" x2="9.75" y2="11.25" />
-                  </svg>
-                  Schedule meeting
-                </button>
+                {canSchedule && (
+                  <button
+                    onClick={() => { setError(""); setShowSchedule(true); }}
+                    className="btn-primary px-5 py-2.5 text-sm font-semibold text-white rounded-xl flex items-center gap-2"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                      <rect x="1.5" y="3" width="13" height="11.5" rx="1.5" />
+                      <line x1="1.5" y1="6.5" x2="14.5" y2="6.5" />
+                      <line x1="5" y1="1" x2="5" y2="4.5" />
+                      <line x1="11" y1="1" x2="11" y2="4.5" />
+                      <line x1="8" y1="9.5" x2="8" y2="13" />
+                      <line x1="6.25" y1="11.25" x2="9.75" y2="11.25" />
+                    </svg>
+                    Schedule meeting
+                  </button>
+                )}
               </div>
             </div>
 
@@ -855,7 +955,7 @@ export default function Home() {
                 ))}
               </div>
               <div className="p-3 border-t border-border/50">
-                {showAddMember ? (
+                {can("manage_members", activeTeamId) && (showAddMember ? (
                   <>
                     <input
                       value={addEmail}
@@ -895,7 +995,7 @@ export default function Home() {
                     </svg>
                     Add member
                   </button>
-                )}
+                ))}
               </div>
             </aside>
           </div>
@@ -910,28 +1010,133 @@ export default function Home() {
                 <p className="text-sm text-text-muted mt-2 leading-relaxed">
                   Meeting minutes management for your organization.
                 </p>
-              </div>
-            ) : !activeOrgId ? (
-              <div className="max-w-md mx-auto mt-[15vh] text-center px-4 animate-fade-up">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent/30 to-success/15 flex items-center justify-center mx-auto mb-5 shadow-[0_8px_30px_-8px_rgba(88,101,242,0.6)]">
-                  <svg className="w-7 h-7 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                    <rect x="3" y="5" width="18" height="16" rx="2.5" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                    <line x1="8" y1="2.5" x2="8" y2="7" />
-                    <line x1="16" y1="2.5" x2="16" y2="7" />
-                  </svg>
-                </div>
-                <h1 className="text-3xl font-bold text-text-normal">Welcome, {user.name}</h1>
-                <p className="text-sm text-text-muted mt-2 leading-relaxed">
-                  Create an organization to start managing meetings and minutes.
-                </p>
                 <button
-                  onClick={() => { setError(""); setShowNewOrg(true); }}
+                  onClick={() => router.push("/login")}
                   className="btn-primary mt-6 px-6 py-2.5 text-sm font-semibold text-white rounded-xl"
                 >
-                  Create organization
+                  Sign in
                 </button>
               </div>
+            ) : !activeOrgId ? (
+              (() => {
+                const h = new Date().getHours();
+                const greeting = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+                const today = new Date().toLocaleDateString("en-US", {
+                  weekday: "long", month: "long", day: "numeric",
+                });
+                return (
+                  <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
+                    {/* Greeting + stats */}
+                    <header className="animate-fade-up">
+                      <h1 className="text-2xl font-bold text-text-normal">
+                        {greeting}, {user.name.split(" ")[0]}
+                      </h1>
+                      <p className="text-sm text-text-muted mt-1">{today}</p>
+                      {feed.upcoming[0] && (
+                        <a href={`/meetings/${feed.upcoming[0].id}`} className="group inline-flex items-center gap-2 mt-3 text-sm text-text-muted hover:text-text-normal transition-colors">
+                          <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse shrink-0" />
+                          <span className="truncate">
+                            Next: {feed.upcoming[0].title} ·{" "}
+                            {new Date(feed.upcoming[0].scheduledAt).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} at{" "}
+                            {new Date(feed.upcoming[0].scheduledAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                          </span>
+                          <svg className="w-3.5 h-3.5 opacity-0 -translate-x-0.5 group-hover:opacity-100 group-hover:translate-x-0 transition-all" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M3 8h10M9 4l4 4-4 4" />
+                          </svg>
+                        </a>
+                      )}
+                    </header>
+                    {/* Organizations */}
+                    <section className="animate-fade-up" style={{ animationDelay: "60ms" }}>
+                      <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Your organizations</h2>
+                        <button
+                          onClick={() => { setError(""); setShowNewOrg(true); }}
+                          className="text-xs text-accent hover:text-accent-hover transition-colors"
+                        >
+                          + New organization
+                        </button>
+                      </div>
+                      {orgs.length > 0 ? (
+                        <div className="grid sm:grid-cols-2 gap-3">
+                          {orgs.map((o) => (
+                            <div key={o.id} className="group relative card-hover bg-surface rounded-xl border border-border/50 p-4">
+                              <button
+                                onClick={() => selectOrg(o.id)}
+                                className="absolute inset-0 z-10 rounded-xl"
+                                aria-label={`Open ${o.name}`}
+                              />
+                              <div className="flex items-start gap-3">
+                                <span className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#6b76ff] to-[#3d49e8] flex items-center justify-center text-white font-bold shrink-0 shadow-[0_4px_14px_-4px_rgba(88,101,242,0.7)]">
+                                  {o.name[0].toUpperCase()}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-semibold text-text-normal truncate">{o.name}</p>
+                                  <p className="text-xs text-text-muted mt-0.5 line-clamp-1">
+                                    {o.description || `${(orgTeams[o.id] ?? []).length} team${(orgTeams[o.id] ?? []).length !== 1 ? "s" : ""}`}
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => router.push(`/settings?org=${o.id}`)}
+                                  title={`${o.name} settings`}
+                                  className="relative z-20 text-text-muted hover:text-text-normal transition-colors px-1 py-0.5 rounded-md hover:bg-surface-hover shrink-0"
+                                >
+                                  ⚙
+                                </button>
+                              </div>
+                              <div className="mt-3 pt-2.5 border-t border-border/40 flex items-center justify-between">
+                                <span className="text-[11px] text-text-muted">
+                                  {(orgTeams[o.id] ?? []).length} team{(orgTeams[o.id] ?? []).length !== 1 ? "s" : ""}
+                                </span>
+                                <span className="text-[11px] text-accent opacity-0 group-hover:opacity-100 transition-opacity">
+                                  Open →
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="bg-surface rounded-xl border border-dashed border-border/50 p-8 text-center">
+                          <p className="text-sm text-text-normal">No organizations yet.</p>
+                          <p className="text-xs text-text-muted mt-1">Create one to start scheduling meetings.</p>
+                          <button
+                            onClick={() => { setError(""); setShowNewOrg(true); }}
+                            className="btn-primary mt-4 px-5 py-2 text-sm font-semibold text-white rounded-lg"
+                          >
+                            Create organization
+                          </button>
+                        </div>
+                      )}
+                    </section>
+
+                    {/* Upcoming across all orgs */}
+                    <section className="animate-fade-up" style={{ animationDelay: "120ms" }}>
+                      <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Upcoming</h2>
+                      {feed.upcoming.length > 0 ? (
+                        <div className="space-y-2">
+                          {feed.upcoming.map((m) => <MeetingCard key={m.id} meeting={m} upcoming />)}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">Nothing scheduled — pick a team and plan ahead.</p>
+                      )}
+                    </section>
+
+                    {/* Recent minutes */}
+                    <section className="animate-fade-up" style={{ animationDelay: "180ms" }}>
+                      <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Recent minutes</h2>
+                      {feed.recent.length > 0 ? (
+                        <div className="space-y-2">
+                          {feed.recent.map((m) => (
+                            <MeetingCard key={m.id} meeting={m} upcoming={false} />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-text-muted">No past meetings yet.</p>
+                      )}
+                    </section>
+                  </div>
+                );
+              })()
             ) : (
               <div className="max-w-3xl mx-auto px-6 py-8 space-y-5">
                 <div className="animate-fade-up">
@@ -962,6 +1167,7 @@ export default function Home() {
                     onAdd={addMember}
                     onRemove={removeMember}
                     error={memberError}
+                    canManage={can("manage_members")}
                   />
                 </div>
 
@@ -991,13 +1197,15 @@ export default function Home() {
                   ) : (
                     <p className="text-sm text-text-muted mt-2">No teams yet.</p>
                   )}
-                  <button
-                    onClick={() => { setError(""); setShowNewTeam(true); }}
-                    className="mt-3 text-sm text-accent hover:text-accent-hover transition-colors flex items-center gap-1.5"
-                  >
-                    <span className="w-4 h-4 rounded bg-accent/15 flex items-center justify-center text-xs">+</span>
-                    New team
-                  </button>
+                  {canManageTeams && (
+                    <button
+                      onClick={() => { setError(""); setShowNewTeam(true); }}
+                      className="mt-3 text-sm text-accent hover:text-accent-hover transition-colors flex items-center gap-1.5"
+                    >
+                      <span className="w-4 h-4 rounded bg-accent/15 flex items-center justify-center text-xs">+</span>
+                      New team
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1133,22 +1341,14 @@ export default function Home() {
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
-            <div className="flex gap-3 mb-4">
-              <input
-                type="date"
-                value={meetingDate}
-                onChange={(e) => setMeetingDate(e.target.value)}
-                className="flex-1 px-3.5 py-2.5 text-sm"
-                disabled={scheduling}
-              />
-              <input
-                type="time"
-                value={meetingTime}
-                onChange={(e) => setMeetingTime(e.target.value)}
-                className="flex-1 px-3.5 py-2.5 text-sm"
-                disabled={scheduling}
-              />
-            </div>
+            <DualDateInput value={meetingDate} onChange={setMeetingDate} className="mb-4" />
+            <input
+              type="time"
+              value={meetingTime}
+              onChange={(e) => setMeetingTime(e.target.value)}
+              className="w-full px-3.5 py-2.5 text-sm mb-4"
+              disabled={scheduling}
+            />
             <input
               value={meetingLocation}
               onChange={(e) => setMeetingLocation(e.target.value)}

@@ -6,10 +6,12 @@ export function PermissionGrid({
   perms,
   selected,
   onToggle,
+  readOnly = false,
 }: {
   perms: Perm[];
   selected: string[];
   onToggle: (permId: string, on: boolean) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
@@ -18,7 +20,9 @@ export function PermissionGrid({
         return (
           <label
             key={p.id}
-            className={`card-hover flex items-start gap-3 px-3.5 py-3 rounded-xl border text-sm cursor-pointer transition-colors animate-fade-up ${
+            className={`card-hover flex items-start gap-3 px-3.5 py-3 rounded-xl border text-sm transition-colors animate-fade-up ${
+              readOnly ? "cursor-default" : "cursor-pointer"
+            } ${
               on
                 ? "border-accent/30 bg-gradient-to-br from-accent/10 to-accent/5"
                 : "border-border/40 bg-surface/50 hover:border-border"
@@ -28,6 +32,7 @@ export function PermissionGrid({
             <input
               type="checkbox"
               checked={on}
+              disabled={readOnly}
               onChange={(e) => onToggle(p.id, e.target.checked)}
               className="mt-0.5 accent-[var(--color-accent)]"
             />

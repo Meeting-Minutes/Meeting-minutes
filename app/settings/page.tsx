@@ -6,6 +6,7 @@ import Link from "next/link";
 import { PermissionGrid } from "./permission-grid";
 import ThemeToggle from "../theme-toggle";
 import TeamsTab from "./teams-tab";
+import { useMyPermissions } from "../use-my-permissions";
 
 type Org = { id: string; name: string; description?: string | null; slug: string };
 type Role = { id: string; name: string; orgId: string; teamId: string | null };
@@ -91,6 +92,9 @@ function SettingsContent() {
   }, [fetchJson, orgParam]);
 
   const orgId = org?.id;
+
+  // UI-only gate; the API enforces the real checks.
+  const { can } = useMyPermissions(orgId);
 
   // Load per-tab data
 
@@ -308,7 +312,7 @@ function SettingsContent() {
             <div className="text-sm text-text-muted animate-fade-up">Loading…</div>
           )}
 
-          {org && tab === "overview" && <OverviewTab key={org.id} org={org} onError={setError} onOrg={setOrg} />}
+          {org && tab === "overview" && <OverviewTab key={org.id} org={org} canEdit={can("manage_org")} onError={setError} onOrg={setOrg} />}
           {org && tab === "roles" && (
             <RolesTab
               roles={roles}
@@ -316,6 +320,7 @@ function SettingsContent() {
               rolePerms={rolePerms}
               selectedRoleId={selectedRoleId}
               newRoleName={newRoleName}
+              canManage={can("manage_roles")}
               onSelectRole={setSelectedRoleId}
               onNewRoleName={setNewRoleName}
               onCreateRole={createRole}
@@ -328,6 +333,7 @@ function SettingsContent() {
               members={members}
               roles={roles}
               addEmail={addEmail}
+              canManage={can("manage_members")}
               onAddEmail={setAddEmail}
               onAddMember={addMember}
               onBulkAdd={bulkAddMembers}
@@ -337,11 +343,18 @@ function SettingsContent() {
             />
           )}
           {org && tab === "teams" && (
-            <TeamsTab key={org.id} orgId={org.id} fetchJson={fetchJson} onError={setError} />
+            <TeamsTab
+              key={org.id}
+              orgId={org.id}
+              fetchJson={fetchJson}
+              onError={setError}
+              can={(key, teamId) => can(key, teamId)}
+            />
           )}
           {org && tab === "templates" && (
             <TemplatesTab
               templates={templates}
+              canManage={can("manage_templates")}
               onCreate={() => openTemplateBuilder()}
               onEdit={(t) => openTemplateBuilder(t)}
             />
@@ -356,10 +369,12 @@ function SettingsContent() {
 
 function OverviewTab({
   org,
+  canEdit,
   onError,
   onOrg,
 }: {
   org: Org;
+  canEdit: boolean;
   onError: (e: string) => void;
   onOrg: (o: Org) => void;
 }) {
@@ -414,22 +429,24 @@ function OverviewTab({
           <label className="block text-sm font-medium mb-1.5">Name</label>
           <input
             value={name}
+            disabled={!canEdit}
             onChange={(e) => setName(e.target.value)}
-            className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
+            className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none disabled:opacity-60"
           />
         </div>
         <div>
           <label className="block text-sm font-medium mb-1.5">Description</label>
           <textarea
             value={description}
+            disabled={!canEdit}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none resize-y"
+            className="w-full bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none resize-y disabled:opacity-60"
           />
         </div>
         <button
           onClick={save}
-          disabled={saving}
+          disabled={saving || !canEdit}
           className="btn-primary self-start px-5 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
         >
           {saving ? "Saving…" : "Save changes"}
@@ -445,6 +462,7 @@ function RolesTab({
   rolePerms,
   selectedRoleId,
   newRoleName,
+  canManage,
   onSelectRole,
   onNewRoleName,
   onCreateRole,
@@ -456,6 +474,7 @@ function RolesTab({
   rolePerms: Record<string, string[]>;
   selectedRoleId: string | null;
   newRoleName: string;
+  canManage: boolean;
   onSelectRole: (id: string) => void;
   onNewRoleName: (v: string) => void;
   onCreateRole: () => void;
@@ -498,34 +517,38 @@ function RolesTab({
                 </span>
                 <span className="truncate">{r.name}</span>
               </span>
-              <button
-                onClick={(e) => { e.stopPropagation(); onDeleteRole(r.id); }}
-                className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-xs px-1"
-                title="Delete role"
-              >
-                ✕
-              </button>
+              {canManage && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDeleteRole(r.id); }}
+                  className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-xs px-1"
+                  title="Delete role"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
           {roles.length === 0 && (
             <div className="text-sm text-text-muted">No roles yet.</div>
           )}
         </div>
-        <div className="flex gap-2">
-          <input
-            value={newRoleName}
-            onChange={(e) => onNewRoleName(e.target.value)}
-            placeholder="New role name"
-            onKeyDown={(e) => e.key === "Enter" && onCreateRole()}
-            className="flex-1 bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
-          />
-          <button
-            onClick={onCreateRole}
-            className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-          >
-            Add
-          </button>
-        </div>
+        {canManage && (
+          <div className="flex gap-2">
+            <input
+              value={newRoleName}
+              onChange={(e) => onNewRoleName(e.target.value)}
+              placeholder="New role name"
+              onKeyDown={(e) => e.key === "Enter" && onCreateRole()}
+              className="flex-1 bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
+            />
+            <button
+              onClick={onCreateRole}
+              className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+            >
+              Add
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-w-0">
@@ -543,6 +566,7 @@ function RolesTab({
           <PermissionGrid
             perms={perms}
             selected={selectedPerms}
+            readOnly={!canManage}
             onToggle={(permId, on) => onTogglePermission(selectedRole.id, permId, on)}
           />
         )}
@@ -555,6 +579,7 @@ function MembersTab({
   members,
   roles,
   addEmail,
+  canManage,
   onAddEmail,
   onAddMember,
   onBulkAdd,
@@ -565,6 +590,7 @@ function MembersTab({
   members: Member[];
   roles: Role[];
   addEmail: string;
+  canManage: boolean;
   onAddEmail: (v: string) => void;
   onAddMember: () => void;
   onBulkAdd: (
@@ -644,22 +670,25 @@ function MembersTab({
           {members.length}
         </span>
       </div>
-      <div className="animate-fade-up card-hover bg-surface border border-border/40 rounded-2xl p-3 flex gap-2" style={{ animationDelay: "40ms" }}>
-        <input
-          value={addEmail}
-          onChange={(e) => onAddEmail(e.target.value)}
-          placeholder="user@example.com"
-          onKeyDown={(e) => e.key === "Enter" && onAddMember()}
-          className="flex-1 bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
-        />
-        <button
-          onClick={onAddMember}
-          className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white"
-        >
-          Add member
-        </button>
-      </div>
-      <div className="animate-fade-up card-hover bg-surface border border-border/40 rounded-2xl p-3 flex flex-col gap-2" style={{ animationDelay: "80ms" }}>
+      {canManage && (
+        <div className="animate-fade-up card-hover bg-surface border border-border/40 rounded-2xl p-3 flex gap-2" style={{ animationDelay: "40ms" }}>
+          <input
+            value={addEmail}
+            onChange={(e) => onAddEmail(e.target.value)}
+            placeholder="user@example.com"
+            onKeyDown={(e) => e.key === "Enter" && onAddMember()}
+            className="flex-1 bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none"
+          />
+          <button
+            onClick={onAddMember}
+            className="btn-primary px-5 py-2 rounded-lg text-sm font-semibold text-white"
+          >
+            Add member
+          </button>
+        </div>
+      )}
+      {canManage && (
+        <div className="animate-fade-up card-hover bg-surface border border-border/40 rounded-2xl p-3 flex flex-col gap-2" style={{ animationDelay: "80ms" }}>
         <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Bulk add (one email per line)</span>
         <textarea
           value={bulkEmails}
@@ -738,7 +767,8 @@ function MembersTab({
             ))}
           </div>
         )}
-      </div>
+        </div>
+      )}
       <div className="flex flex-col gap-2">
         {members.map((m, i) => (
           <div
@@ -756,23 +786,27 @@ function MembersTab({
               <div className="text-sm font-medium truncate">{m.user.name || m.user.email}</div>
               <div className="text-xs text-text-muted truncate">{m.user.email}</div>
             </div>
-            <select
-              value={m.roleId ?? ""}
-              onChange={(e) => onAssignRole(m.userId, m.teamId, e.target.value || null)}
-              className="bg-bg-input border border-border rounded-lg px-2 py-1.5 text-sm focus:border-accent focus:outline-none cursor-pointer"
-            >
-              <option value="">No role</option>
-              {roles.map((r) => (
-                <option key={r.id} value={r.id}>{r.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => onRemoveMember(m.userId, m.teamId)}
-              className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-sm px-1"
-              title="Remove member"
-            >
-              ✕
-            </button>
+            {canManage && (
+              <select
+                value={m.roleId ?? ""}
+                onChange={(e) => onAssignRole(m.userId, m.teamId, e.target.value || null)}
+                className="bg-bg-input border border-border rounded-lg px-2 py-1.5 text-sm focus:border-accent focus:outline-none cursor-pointer"
+              >
+                <option value="">No role</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name}</option>
+                ))}
+              </select>
+            )}
+            {canManage && (
+              <button
+                onClick={() => onRemoveMember(m.userId, m.teamId)}
+                className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-sm px-1"
+                title="Remove member"
+              >
+                ✕
+              </button>
+            )}
           </div>
         ))}
         {members.length === 0 && (
@@ -785,10 +819,12 @@ function MembersTab({
 
 function TemplatesTab({
   templates,
+  canManage,
   onCreate,
   onEdit,
 }: {
   templates: Template[];
+  canManage: boolean;
   onCreate: () => void;
   onEdit: (t: Template) => void;
 }) {
@@ -801,12 +837,14 @@ function TemplatesTab({
             {templates.length}
           </span>
         </div>
-        <button
-          onClick={onCreate}
-          className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white"
-        >
-          New template
-        </button>
+        {canManage && (
+          <button
+            onClick={onCreate}
+            className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white"
+          >
+            New template
+          </button>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         {templates.map((t, i) => {

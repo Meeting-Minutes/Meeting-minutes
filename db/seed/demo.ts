@@ -22,8 +22,7 @@ import { bootstrapOrgAdmin } from "@/lib/permissions";
 
 const PCAMPUS_FIELDS = [
   { name: "title", label: "बैठकको शीर्षक", type: "text" },
-  { name: "date_np", label: "मिति (नेपाली)", type: "text" },
-  { name: "date_ad", label: "मिति (अंग्रेजी)", type: "date" },
+  { name: "date_ad", label: "मिति", type: "date" },
   { name: "day", label: "दिन", type: "text" },
   { name: "time", label: "समय", type: "text" },
   { name: "location", label: "स्थान", type: "text" },
@@ -132,6 +131,24 @@ async function ensureShare(minutesId: string, token: string, email: string | nul
     .onConflictDoNothing();
 }
 
+// Repair drift from manual member removal: every demo org keeps its founder as
+// an org-wide Admin. Checked explicitly (not onConflictDoNothing) so we don't
+// rely on a unique constraint existing.
+async function ensureFounderAdmin(orgId: string, userId: string) {
+  const [m] = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(and(eq(memberships.organizationId, orgId), eq(memberships.userId, userId), isNull(memberships.teamId)))
+    .limit(1);
+  if (m) return;
+  const [adminRole] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.orgId, orgId), eq(roles.name, "Admin"), isNull(roles.teamId)))
+    .limit(1);
+  await db.insert(memberships).values({ userId, organizationId: orgId, teamId: null, roleId: adminRole?.id ?? null });
+}
+
 async function deleteMeeting(meetingId: string) {
   await db.delete(minutes).where(eq(minutes.id, meetingId));
   await db.delete(meetingTeams).where(eq(meetingTeams.meetingId, meetingId));
@@ -232,6 +249,7 @@ export async function seedDemo() {
     await db.insert(organizations).values({ id: pcampusId, name: "PCampus", slug: "pcampus" });
     await bootstrapOrgAdmin(pcampusId, adminId);
   }
+  await ensureFounderAdmin(pcampusId, adminId);
 
   // org-wide admin + secretary roles, nested teams, memberships
   const adminRoleId = (await db.select({ id: roles.id }).from(roles)
@@ -267,7 +285,6 @@ export async function seedDemo() {
   const committee = await createMeeting(pcampusId, engId, pcampusMinuteId,
     "अनुसन्धान परियोजना कार्यान्वयन समितिको बैठक", "2026-03-18T02:45:00Z", adminId, {
     title: "अनुसन्धान परियोजना कार्यान्वयन समितिको बैठक",
-    date_np: "२०८२/१२/०४",
     date_ad: "2026-03-18",
     day: "बुधबार",
     time: "राति ०२:४५ बजे",
@@ -335,6 +352,7 @@ export async function seedDemo() {
     await db.insert(organizations).values({ id: riversideId, name: "Riverside NGO", slug: "riverside-ngo" });
     await bootstrapOrgAdmin(riversideId, adminId);
   }
+  await ensureFounderAdmin(riversideId, adminId);
 
   const opsId = await ensureTeam(riversideId, "Field Operations");
   await createMeeting(riversideId, opsId, null,
