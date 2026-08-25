@@ -51,6 +51,7 @@ export default function MeetingDetailPage() {
   const { can } = useMyPermissions(meeting?.orgId);
   const canEdit = can("edit_meeting");
   const canExport = can("export_minutes");
+  const canDelete = can("delete_meeting");
 
   useEffect(() => {
     fetch(`/api/meetings/${meetingId}`)
@@ -185,6 +186,25 @@ export default function MeetingDetailPage() {
       setError((e as Error).message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteMinutes() {
+    if (!window.confirm("Delete these minutes? All associated shares will also be removed. This cannot be undone.")) return;
+    setError("");
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/minutes`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to delete minutes");
+      }
+      // Reset local state to the "no minutes yet" view.
+      setContent({});
+      setStatus("draft");
+      setMinutesExists(false);
+      setPreviewHtml(null);
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
@@ -336,6 +356,15 @@ export default function MeetingDetailPage() {
               className="btn-primary px-4 py-1.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? "Saving…" : "Save"}
+            </button>
+          )}
+          {canDelete && minutesExists && (
+            <button
+              onClick={deleteMinutes}
+              className="px-3 py-1.5 rounded-lg border border-danger/30 text-sm text-danger hover:bg-danger/10 transition-colors active:scale-95"
+              title="Delete minutes"
+            >
+              Delete
             </button>
           )}
         </div>

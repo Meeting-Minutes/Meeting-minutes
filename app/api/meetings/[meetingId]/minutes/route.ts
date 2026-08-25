@@ -121,3 +121,22 @@ export async function PUT(
 
   return NextResponse.json({ success: true });
 }
+
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ meetingId: string }> },
+) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { meetingId } = await params;
+  const access = await resolveMeetingAccess(user.id, meetingId);
+  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!(await hasPermission({ userId: user.id, orgId: access.orgId }, "delete_meeting"))) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Shares cascade-delete with their minutes row (FK onDelete cascade).
+  await db.delete(minutes).where(eq(minutes.id, meetingId));
+  return NextResponse.json({ success: true });
+}
