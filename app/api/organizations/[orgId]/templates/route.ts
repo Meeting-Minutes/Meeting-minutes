@@ -5,6 +5,7 @@ import { templates } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
 import { hasPermission } from "@/lib/permissions";
+import { findStarterTemplate } from "@/lib/starter-templates";
 
 export async function GET(
   _req: Request,
@@ -30,6 +31,29 @@ export async function POST(
   const { orgId } = await params;
   if (!(await hasPermission({ userId: user.id, orgId }, "manage_templates"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Add-from-library: copy a built-in starter template into this org. The copy
+  // gets orgId set here, so it's org-owned and never spans to another org.
+  if ((req.headers.get("content-type") || "").includes("application/json")) {
+    const { starterKey } = await req.json().catch(() => ({}));
+    const starter = starterKey ? findStarterTemplate(starterKey) : undefined;
+    if (!starter) {
+      return NextResponse.json({ error: "Unknown starter template" }, { status: 400 });
+    }
+    const [created] = await db
+      .insert(templates)
+      .values({
+        id: randomUUID(),
+        orgId,
+        name: starter.name,
+        description: starter.description,
+        createdBy: user.id,
+        fields: starter.fields,
+        texSource: starter.texSource,
+      })
+      .returning();
+    return NextResponse.json(created, { status: 201 });
   }
 
   const formData = await req.formData();

@@ -330,10 +330,16 @@ function SettingsContent() {
           )}
           {org && tab === "templates" && (
             <TemplatesTab
+              orgId={org.id}
               templates={templates}
               canManage={can("manage_templates")}
               onCreate={() => openTemplateBuilder()}
               onEdit={(t) => openTemplateBuilder(t)}
+              onRefresh={() =>
+                fetchJson(`/api/organizations/${org.id}/templates`)
+                  .then(setTemplates)
+                  .catch((e) => setError((e as Error).message))
+              }
             />
           )}
         </main>
@@ -974,16 +980,60 @@ function InviteModal({
 }
 
 function TemplatesTab({
+  orgId,
   templates,
   canManage,
   onCreate,
   onEdit,
+  onRefresh,
 }: {
+  orgId: string;
   templates: Template[];
   canManage: boolean;
   onCreate: () => void;
   onEdit: (t: Template) => void;
+  onRefresh: () => void;
 }) {
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [catalog, setCatalog] = useState<
+    { key: string; name: string; description: string | null; fieldCount: number }[]
+  >([]);
+  const [adding, setAdding] = useState<string | null>(null);
+  const [libError, setLibError] = useState("");
+
+  useEffect(() => {
+    if (!libraryOpen || catalog.length > 0) return;
+    fetch("/api/templates/catalog")
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setCatalog)
+      .catch(() => setLibError("Couldn't load the template library."));
+  }, [libraryOpen, catalog.length]);
+
+  async function addStarter(key: string) {
+    setAdding(key);
+    setLibError("");
+    try {
+      const res = await fetch(`/api/organizations/${orgId}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ starterKey: key }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to add template");
+      }
+      onRefresh();
+      setLibraryOpen(false);
+    } catch (e) {
+      setLibError((e as Error).message);
+    } finally {
+      setAdding(null);
+    }
+  }
+
+  // Names already in the org — offer re-adding but flag the duplicate.
+  const existingNames = new Set(templates.map((t) => t.name));
+
   return (
     <div className="max-w-3xl flex flex-col gap-5">
       <div className="animate-fade-up flex items-center justify-between">
@@ -994,14 +1044,32 @@ function TemplatesTab({
           </span>
         </div>
         {canManage && (
-          <button
-            onClick={onCreate}
-            className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white"
-          >
-            New template
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setLibraryOpen(true)}
+              className="px-4 py-2 rounded-lg border border-border text-sm font-semibold hover:bg-surface/60 transition-colors"
+            >
+              Add from library
+            </button>
+            <button
+              onClick={onCreate}
+              className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white"
+            >
+              New template
+            </button>
+          </div>
         )}
       </div>
+      {libraryOpen && (
+        <StarterLibrary
+          catalog={catalog}
+          existingNames={existingNames}
+          adding={adding}
+          error={libError}
+          onAdd={addStarter}
+          onClose={() => setLibraryOpen(false)}
+        />
+      )}
       <div className="flex flex-col gap-2">
         {templates.map((t, i) => {
           const fieldCount = t.fields?.length ?? 0;
@@ -1031,6 +1099,73 @@ function TemplatesTab({
         {templates.length === 0 && (
           <div className="text-sm text-text-muted animate-fade-up">No templates yet.</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function StarterLibrary({
+  catalog,
+  existingNames,
+  adding,
+  error,
+  onAdd,
+  onClose,
+}: {
+  catalog: { key: string; name: string; description: string | null; fieldCount: number }[];
+  existingNames: Set<string>;
+  adding: string | null;
+  error: string;
+  onAdd: (key: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative animate-pop-in bg-bg-primary w-full max-w-lg p-6 rounded-2xl shadow-[0_20px_60px_-20px_rgba(0,0,0,0.7)] border border-border/50 flex flex-col gap-4 max-h-[90vh] overflow-auto">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Template library</h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-normal text-sm px-1">✕</button>
+        </div>
+        <p className="text-xs text-text-muted -mt-2">
+          Add a ready-made template to this organization. It becomes an editable copy owned by this org.
+        </p>
+        {error && <p className="text-danger text-sm">{error}</p>}
+        <div className="flex flex-col gap-2">
+          {catalog.map((c) => {
+            const already = existingNames.has(c.name);
+            return (
+              <div
+                key={c.key}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border/40 bg-surface/50"
+              >
+                <span className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-[#6b76ff] to-[#3d49e8] flex items-center justify-center text-white text-xs shadow-[0_2px_8px_-2px_rgba(88,101,242,0.6)]">
+                  ◈
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-medium truncate">{c.name}</span>
+                  {c.description && (
+                    <span className="block text-xs text-text-muted truncate">{c.description}</span>
+                  )}
+                </span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-surface border border-border/50 text-text-muted shrink-0">
+                  {c.fieldCount} field{c.fieldCount === 1 ? "" : "s"}
+                </span>
+                <button
+                  onClick={() => onAdd(c.key)}
+                  disabled={adding !== null}
+                  title={already ? "Already added — this creates another copy" : undefined}
+                  className="shrink-0 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/25 text-accent text-xs font-medium hover:bg-accent/20 transition-colors disabled:opacity-50"
+                >
+                  {adding === c.key ? "Adding…" : already ? "Add again" : "Add"}
+                </button>
+              </div>
+            );
+          })}
+          {catalog.length === 0 && !error && (
+            <div className="text-sm text-text-muted">Loading library…</div>
+          )}
+        </div>
       </div>
     </div>
   );

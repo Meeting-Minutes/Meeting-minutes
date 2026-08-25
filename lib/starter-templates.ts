@@ -1,4 +1,19 @@
-<!DOCTYPE html>
+// Built-in demo/starter templates an admin can add into a specific org.
+// Single source of truth — the demo seed and the "add from library" feature
+// both read from here. Kept dependency-free (only a type import) and with the
+// Handlebars source inlined so it works identically in the seed script, in
+// server routes, and on serverless (no runtime filesystem reads).
+import type { Field } from "@/db/schema/templates";
+
+export type StarterTemplate = {
+  key: string;
+  name: string;
+  description: string;
+  fields: Field[];
+  texSource: string;
+};
+
+const PCAMPUS_MINUTE_HBS = `<!DOCTYPE html>
 <html lang="ne">
 <head>
 <meta charset="UTF-8">
@@ -69,3 +84,52 @@
 
 </body>
 </html>
+`;
+
+export const STARTER_TEMPLATES: StarterTemplate[] = [
+  {
+    key: "pcampus-minute",
+    name: "PCampus Minute",
+    description:
+      "नेपाली क्याम्पस समिति बैठकको कार्यविवरण — उपस्थिति, प्रस्ताव, निर्णय र हस्ताक्षर",
+    fields: [
+      { name: "title", label: "बैठकको शीर्षक", type: "text" },
+      { name: "date_ad", label: "मिति", type: "date" },
+      { name: "day", label: "दिन", type: "text" },
+      { name: "time", label: "समय", type: "text" },
+      { name: "location", label: "स्थान", type: "text" },
+      { name: "committee", label: "समितिको विवरण", type: "textarea" },
+      { name: "committee_name", label: "समितिको नाम", type: "text" },
+      { name: "chair", label: "संयोजकको नाम", type: "text" },
+      {
+        name: "attendees",
+        label: "उपस्थिति",
+        type: "table",
+        config: {
+          columns: [
+            { key: "name", label: "नाम" },
+            { key: "designation", label: "पद/विभाग" },
+            { key: "post", label: "समिति पद" },
+          ],
+        },
+      },
+      {
+        name: "proposals",
+        label: "प्रस्तावहरु",
+        type: "table",
+        config: { columns: [{ key: "item", label: "प्रस्ताव" }] },
+      },
+      {
+        name: "decisions",
+        label: "निर्णयहरू",
+        type: "table",
+        config: { columns: [{ key: "item", label: "निर्णय" }] },
+      },
+    ],
+    texSource: PCAMPUS_MINUTE_HBS,
+  },
+];
+
+export function findStarterTemplate(key: string): StarterTemplate | undefined {
+  return STARTER_TEMPLATES.find((t) => t.key === key);
+}
