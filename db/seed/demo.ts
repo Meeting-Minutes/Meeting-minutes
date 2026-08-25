@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { db } from "../index";
 import {
   organizations,
@@ -17,22 +16,13 @@ import {
 } from "../schema";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { bootstrapOrgAdmin } from "@/lib/permissions";
+import { STARTER_TEMPLATES } from "@/lib/starter-templates";
 
 // ─── PCampus minute (Nepali committee minutes) template ────────────────────
 
-const PCAMPUS_FIELDS = [
-  { name: "title", label: "बैठकको शीर्षक", type: "text" },
-  { name: "date_ad", label: "मिति", type: "date" },
-  { name: "day", label: "दिन", type: "text" },
-  { name: "time", label: "समय", type: "text" },
-  { name: "location", label: "स्थान", type: "text" },
-  { name: "committee", label: "समितिको विवरण", type: "textarea" },
-  { name: "committee_name", label: "समितिको नाम", type: "text" },
-  { name: "chair", label: "संयोजकको नाम", type: "text" },
-  { name: "attendees", label: "उपस्थिति", type: "table", config: { columns: [{ key: "name", label: "नाम" }, { key: "designation", label: "पद/विभाग" }, { key: "post", label: "समिति पद" }] } },
-  { name: "proposals", label: "प्रस्तावहरु", type: "table", config: { columns: [{ key: "item", label: "प्रस्ताव" }] } },
-  { name: "decisions", label: "निर्णयहरू", type: "table", config: { columns: [{ key: "item", label: "निर्णय" }] } },
-];
+// The demo's minute template now lives in the shared starter-template catalog
+// (single source of truth, reused by the "add from library" feature).
+const PCAMPUS_MINUTE = STARTER_TEMPLATES.find((t) => t.key === "pcampus-minute")!;
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -86,9 +76,8 @@ async function ensureMember(userId: string, orgId: string, teamId: string | null
 }
 
 async function createTemplate(
-  orgId: string, userId: string, name: string, desc: string, fields: unknown[], texPath: string,
+  orgId: string, userId: string, name: string, desc: string, fields: unknown[], texSource: string,
 ) {
-  const texSource = readFileSync(texPath, "utf-8");
   const [t] = await db.select({ id: templates.id, fields: templates.fields }).from(templates).where(eq(templates.name, name)).limit(1);
   if (t) {
     if (!t.fields || (t.fields as unknown[]).length === 0) {
@@ -276,8 +265,8 @@ export async function seedDemo() {
   // ── template ─────────────────────────────────────────────────────────────
 
   const pcampusMinuteId = await createTemplate(pcampusId, adminId,
-    "PCampus Minute", "नेपाली क्याम्पस समिति बैठकको कार्यविवरण — उपस्थिति, प्रस्ताव, निर्णय र हस्ताक्षर",
-    PCAMPUS_FIELDS, "db/seed/templates/pcampus-minute.hbs");
+    PCAMPUS_MINUTE.name, PCAMPUS_MINUTE.description,
+    PCAMPUS_MINUTE.fields, PCAMPUS_MINUTE.texSource);
 
   // ── meetings: one per state the UI surfaces ──────────────────────────────
 
