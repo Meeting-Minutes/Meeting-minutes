@@ -11,8 +11,19 @@ export function newInviteToken(): string {
   return randomBytes(24).toString("base64url");
 }
 
+/** Public base URL for links in emails. Prefers an explicit APP_URL, then the
+ *  Vercel-provided production/deployment domain, then localhost — so invite
+ *  links don't silently point at localhost when APP_URL isn't configured. */
+export function appBaseUrl(): string {
+  const explicit = process.env.APP_URL;
+  if (explicit) return explicit.replace(/\/+$/, "");
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  if (vercel) return `https://${vercel}`;
+  return "http://localhost:3000";
+}
+
 export function inviteUrl(token: string): string {
-  return `${process.env.APP_URL ?? "http://localhost:3000"}/join/${token}`;
+  return `${appBaseUrl()}/join/${token}`;
 }
 
 export function isExpired(row: { expiresAt: Date }): boolean {
