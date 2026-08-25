@@ -269,6 +269,9 @@ export default function Home() {
   const [error, setError] = useState("");
   const [memberError, setMemberError] = useState("");
   const [addEmail, setAddEmail] = useState("");
+  const [addMode, setAddMode] = useState<"email" | "existing">("email");
+  const [addUserId, setAddUserId] = useState("");
+  const [orgMembers, setOrgMembers] = useState<Member[]>([]);
   const [showAddMember, setShowAddMember] = useState(false);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
@@ -372,6 +375,16 @@ export default function Home() {
       .then(setMembers);
   }, [activeOrgId, activeTeamId]);
 
+  // Org-wide roster for the "existing member" add mode — kept separate from
+  // `members` (which narrows to the active team) so the picker can list org
+  // members not yet on the team.
+  useEffect(() => {
+    if (!activeOrgId) return;
+    fetch(`/api/organizations/${activeOrgId}/members`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setOrgMembers);
+  }, [activeOrgId]);
+
   useEffect(() => {
     if (!activeTeamId) return;
     const params = new URLSearchParams();
@@ -461,11 +474,16 @@ export default function Home() {
   }
 
   async function addMember() {
-    if (!activeOrgId || !addEmail.trim()) return;
+    if (!activeOrgId) return;
+    const email =
+      addMode === "existing"
+        ? orgMembers.find((m) => m.userId === addUserId)?.user.email
+        : addEmail.trim();
+    if (!email) return;
     setMemberError("");
     const res = await fetch(`/api/organizations/${activeOrgId}/members`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: addEmail.trim(), teamId: activeTeamId || null }),
+      body: JSON.stringify({ email, teamId: activeTeamId || null }),
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
@@ -473,6 +491,7 @@ export default function Home() {
     }
     const d = await res.json().catch(() => ({}));
     setAddEmail("");
+    setAddUserId("");
     setShowAddMember(false);
     fetchMembers(activeOrgId, activeTeamId ?? undefined);
     refreshPerms();
@@ -1031,24 +1050,61 @@ export default function Home() {
               <div className="p-3 border-t border-border/50">
                 {can("manage_members", activeTeamId) && (showAddMember ? (
                   <>
-                    <input
-                      value={addEmail}
-                      onChange={(e) => setAddEmail(e.target.value)}
-                      placeholder="Email address"
-                      className="w-full px-3 py-2 text-sm mb-2"
-                      autoFocus
-                      onKeyDown={(e) => e.key === "Enter" && addMember()}
-                    />
+                    <div className="flex gap-1 text-xs mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setAddMode("email")}
+                        className={`px-2.5 py-1 rounded-md transition-colors ${
+                          addMode === "email" ? "bg-accent/15 text-accent" : "text-text-muted hover:text-text-normal"
+                        }`}
+                      >
+                        By email
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAddMode("existing")}
+                        className={`px-2.5 py-1 rounded-md transition-colors ${
+                          addMode === "existing" ? "bg-accent/15 text-accent" : "text-text-muted hover:text-text-normal"
+                        }`}
+                      >
+                        Existing member
+                      </button>
+                    </div>
+                    {addMode === "email" ? (
+                      <input
+                        value={addEmail}
+                        onChange={(e) => setAddEmail(e.target.value)}
+                        placeholder="Email address"
+                        className="w-full px-3 py-2 text-sm mb-2"
+                        autoFocus
+                        onKeyDown={(e) => e.key === "Enter" && addMember()}
+                      />
+                    ) : (
+                      <select
+                        value={addUserId}
+                        onChange={(e) => setAddUserId(e.target.value)}
+                        className="w-full px-3 py-2 text-sm mb-2 cursor-pointer"
+                      >
+                        <option value="">Select a member…</option>
+                        {orgMembers
+                          .filter((om) => !members.some((tm) => tm.userId === om.userId))
+                          .map((m) => (
+                            <option key={m.userId} value={m.userId}>
+                              {m.user.name || m.user.email} ({m.user.email})
+                            </option>
+                          ))}
+                      </select>
+                    )}
                     <div className="flex gap-2">
                       <button
                         onClick={addMember}
-                        disabled={!addEmail.trim()}
+                        disabled={addMode === "email" ? !addEmail.trim() : !addUserId}
                         className="btn-primary flex-1 px-4 py-2 text-sm font-semibold text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Add
                       </button>
                       <button
-                        onClick={() => { setShowAddMember(false); setAddEmail(""); setMemberError(""); }}
+                        onClick={() => { setShowAddMember(false); setAddEmail(""); setAddUserId(""); setMemberError(""); }}
                         className="px-3 py-2 text-sm text-text-muted hover:text-text-normal transition-colors"
                       >
                         Cancel
