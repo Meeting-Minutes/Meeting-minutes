@@ -43,9 +43,12 @@ export default function TeamsTab({
 
   // members (per selected team)
   const [members, setMembers] = useState<Member[]>([]);
+  const [addMode, setAddMode] = useState<"email" | "existing">("email");
   const [addEmail, setAddEmail] = useState("");
+  const [addUserId, setAddUserId] = useState("");
   const [addRoleId, setAddRoleId] = useState("");
   const [membersNote, setMembersNote] = useState<string | null>(null);
+  const [orgMembers, setOrgMembers] = useState<Member[]>([]);
 
   // roles (per selected team scope)
   const [perms, setPerms] = useState<Perm[]>([]);
@@ -132,6 +135,13 @@ export default function TeamsTab({
     } catch (e) {
       setMembers([]);
       setMembersNote((e as Error).message);
+    }
+    // Org roster, for the "existing member" add mode's dropdown.
+    try {
+      const data = (await fetchJson(`/api/organizations/${orgId}/members`)) as Member[];
+      setOrgMembers(data);
+    } catch {
+      setOrgMembers([]);
     }
     // Roles for this scope: org-wide roles + this team's roles
     const denied: string[] = [];
@@ -243,17 +253,23 @@ export default function TeamsTab({
   // ── members ─────────────────────────────────────────────────────────────
 
   async function addTeamMember() {
-    if (!team || !addEmail.trim()) return;
+    if (!team) return;
+    const email =
+      addMode === "existing"
+        ? orgMembers.find((m) => m.userId === addUserId)?.user.email
+        : addEmail.trim();
+    if (!email) return;
     try {
       const d = (await fetchJson(
         `/api/organizations/${orgId}/members`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: addEmail.trim(), teamId: team.id, roleId: addRoleId || null }),
+          body: JSON.stringify({ email, teamId: team.id, roleId: addRoleId || null }),
         },
       )) as { invited?: { email: string; token: string }[] };
       setAddEmail("");
+      setAddUserId("");
       setAddRoleId("");
       await load(team.id);
       if (d.invited && d.invited.length > 0) {
@@ -374,6 +390,11 @@ export default function TeamsTab({
 
   const assignableRoles = [...orgRoles, ...teamRoles];
   const selectedRole = [...teamRoles].find((r) => r.id === selectedRoleId) ?? null;
+  const teamMemberIds = useMemo(() => new Set(members.map((m) => m.userId)), [members]);
+  const pickableOrgMembers = useMemo(
+    () => orgMembers.filter((m) => !teamMemberIds.has(m.userId)),
+    [orgMembers, teamMemberIds],
+  );
 
   const inputClass =
     "bg-bg-input border border-border rounded-lg px-3 py-2 text-sm focus:border-accent focus:outline-none";
@@ -585,27 +606,65 @@ export default function TeamsTab({
                   <div className="px-3 py-2 rounded-lg bg-warning/10 border border-warning/25 text-xs text-warning">{membersNote}</div>
                 )}
                 {canManageTeamMembers && (
-                  <div className="flex gap-2">
-                    <input
-                      value={addEmail}
-                      onChange={(e) => setAddEmail(e.target.value)}
-                      placeholder="member@example.com"
-                      className={`flex-1 ${inputClass}`}
-                      onKeyDown={(e) => e.key === "Enter" && addTeamMember()}
-                    />
-                    <select
-                      value={addRoleId}
-                      onChange={(e) => setAddRoleId(e.target.value)}
-                      className={`${inputClass} cursor-pointer`}
-                    >
-                      <option value="">No role</option>
-                      {assignableRoles.map((r) => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </select>
-                    <button onClick={addTeamMember} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white shrink-0">
-                      Add
-                    </button>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-1 text-xs">
+                      <button
+                        onClick={() => setAddMode("email")}
+                        className={`px-2.5 py-1 rounded-md transition-colors ${
+                          addMode === "email" ? "bg-accent/15 text-accent" : "text-text-muted hover:text-text-normal"
+                        }`}
+                      >
+                        By email
+                      </button>
+                      <button
+                        onClick={() => setAddMode("existing")}
+                        className={`px-2.5 py-1 rounded-md transition-colors ${
+                          addMode === "existing" ? "bg-accent/15 text-accent" : "text-text-muted hover:text-text-normal"
+                        }`}
+                      >
+                        Existing member
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      {addMode === "email" ? (
+                        <input
+                          value={addEmail}
+                          onChange={(e) => setAddEmail(e.target.value)}
+                          placeholder="member@example.com"
+                          className={`flex-1 ${inputClass}`}
+                          onKeyDown={(e) => e.key === "Enter" && addTeamMember()}
+                        />
+                      ) : (
+                        <select
+                          value={addUserId}
+                          onChange={(e) => setAddUserId(e.target.value)}
+                          className={`flex-1 ${inputClass} cursor-pointer`}
+                        >
+                          <option value="">Select a member…</option>
+                          {pickableOrgMembers.map((m) => (
+                            <option key={m.userId} value={m.userId}>
+                              {m.user.name || m.user.email} ({m.user.email})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <select
+                        value={addRoleId}
+                        onChange={(e) => setAddRoleId(e.target.value)}
+                        className={`${inputClass} cursor-pointer`}
+                      >
+                        <option value="">No role</option>
+                        {assignableRoles.map((r) => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </select>
+                      <button onClick={addTeamMember} className="btn-primary px-4 py-2 rounded-lg text-sm font-semibold text-white shrink-0">
+                        Add
+                      </button>
+                    </div>
+                    {addMode === "existing" && pickableOrgMembers.length === 0 && (
+                      <p className="text-xs text-text-muted">Everyone in the organization is already on this team.</p>
+                    )}
                   </div>
                 )}
                 <div className="flex flex-col gap-2">
