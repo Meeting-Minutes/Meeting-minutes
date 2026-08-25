@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useActionState, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useActionState, useRef, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { login } from "./actions";
 import ThemeToggle from "../../theme-toggle";
@@ -23,9 +23,17 @@ export default function LoginPage() {
 
 function LoginForm() {
   const next = useSearchParams().get("next") ?? "/";
+  const router = useRouter();
   const [state, action, pending] = useActionState(login, undefined);
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (state?.redirect) {
+      router.push(state.redirect);
+      router.refresh();
+    }
+  }, [state?.redirect, router, next]);
 
   function fillDemo(email: string) {
     if (emailRef.current) emailRef.current.value = email;

@@ -2,7 +2,6 @@
 
 import { verifyCredentials } from "@/lib/auth";
 import { createSession } from "@/lib/session";
-import { redirect } from "next/navigation";
 
 export async function login(_prev: unknown, formData: FormData) {
   const email = formData.get("email") as string;
@@ -21,5 +20,5 @@ export async function login(_prev: unknown, formData: FormData) {
   }
 
   await createSession(user.id);
-  redirect(next);
+  return { redirect: next };
 }
