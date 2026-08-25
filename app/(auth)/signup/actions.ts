@@ -1,7 +1,6 @@
 "use server";
 
 import { createUser } from "@/lib/auth";
-import { createSession } from "@/lib/session";
 import { redirect } from "next/navigation";
 
 export async function signup(_prev: unknown, formData: FormData) {
@@ -17,13 +16,13 @@ export async function signup(_prev: unknown, formData: FormData) {
     return { error: "Name, email and password are required" };
   }
 
-  let user;
   try {
-    user = await createUser(name, email, password);
+    await createUser(name, email, password);
   } catch {
     return { error: "An account with this email already exists" };
   }
 
-  await createSession(user.id);
-  redirect(next);
+  // Don't auto-establish a session: send the new user to sign in. Carrying
+  // `next` means an invite signup lands back on the join page after login.
+  redirect(next !== "/" ? `/login?next=${encodeURIComponent(next)}` : "/login");
 }

@@ -3,7 +3,7 @@ import nodemailer from "nodemailer";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { memberships, users } from "@/db/schema";
-import { INVITE_TTL_DAYS, inviteUrl } from "@/lib/invitations";
+import { INVITE_TTL_DAYS, inviteUrl, appBaseUrl } from "@/lib/invitations";
 
 export function emailConfigured(): boolean {
   return Boolean(process.env.SMTP_HOST);
@@ -25,7 +25,7 @@ export async function teamEmails(orgId: string, teamId: string): Promise<string[
 }
 
 export function appUrl(): string {
-  return process.env.APP_URL ?? "http://localhost:3000";
+  return appBaseUrl();
 }
 
 export async function sendEmail(opts: {

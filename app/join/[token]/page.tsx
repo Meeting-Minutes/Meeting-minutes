@@ -59,8 +59,8 @@ export default async function JoinPage({
             <h1 className="text-xl font-semibold">Wrong account</h1>
             <p className="text-text-muted text-sm mt-2">
               This invite was sent to <strong>{invite.email}</strong>, but you
-              are signed in as <strong>{user!.email}</strong>. Sign in with the
-              invited account and open the link again.
+              are signed in as <strong>{user!.email}</strong>. Firstly sign out, then click the invite link again to accept the invitation.
+
             </p>
           </>
         ) : (
@@ -74,7 +74,23 @@ export default async function JoinPage({
             </p>
             {user ? (
               <AcceptButton token={token} />
+            ) : invite.email ? (
+              // Targeted invite: the recipient has no account yet (existing
+              // accounts are added directly, never emailed a link), so the only
+              // path is to create the account — then sign in to accept.
+              <div className="mt-5 flex flex-col gap-2">
+                <Link
+                  href={`/signup?next=${encodeURIComponent(`/join/${token}`)}`}
+                  className="btn-primary block py-2.5 px-4 rounded-lg text-white font-semibold"
+                >
+                  Create an account
+                </Link>
+                <p className="text-xs text-text-muted mt-1">
+                  Use the address this invite was sent to: {invite.email}
+                </p>
+              </div>
             ) : (
+              // Open link: anyone with it may join and might already have an account.
               <div className="mt-5 flex flex-col gap-2">
                 <Link
                   href={`/login?next=${encodeURIComponent(`/join/${token}`)}`}
@@ -88,11 +104,6 @@ export default async function JoinPage({
                 >
                   Create an account
                 </Link>
-                {invite.email && (
-                  <p className="text-xs text-text-muted mt-1">
-                    Use the address this invite was sent to: {invite.email}
-                  </p>
-                )}
               </div>
             )}
           </>
