@@ -808,7 +808,17 @@ function InviteModal({
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || "Failed to invite");
-      setResult(d.openLink ? { added: [], invited: [], alreadyMembers: [], emailErrors: [], emailed: [], openLink: d.openLink } : d);
+      // Normalize: the /invitations endpoint omits some arrays the emails path
+      // never fills (e.g. alreadyMembers), so default every field — otherwise
+      // the result view crashes on `.length` of undefined (no error boundary).
+      setResult({
+        added: d.added ?? [],
+        invited: d.invited ?? [],
+        alreadyMembers: d.alreadyMembers ?? [],
+        emailErrors: d.emailErrors ?? [],
+        emailed: d.emailed ?? [],
+        openLink: d.openLink,
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
