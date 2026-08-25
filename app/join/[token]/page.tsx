@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { isExpired } from "@/lib/invitations";
 import ThemeToggle from "@/app/theme-toggle";
 import AcceptButton from "./accept-button";
+import LogoutButton from "./logout-button";
 
 export default async function JoinPage({
   params,
@@ -38,7 +39,8 @@ export default async function JoinPage({
 
   return (
     <div className="relative flex items-center justify-center min-h-screen bg-bg-tertiary px-4">
-      <div className="absolute top-5 right-5">
+      <div className="absolute top-5 right-5 flex items-center gap-2">
+        {user && <LogoutButton />}
         <ThemeToggle />
       </div>
       <div className="animate-pop-in bg-bg-primary w-full max-w-sm p-8 rounded-2xl shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)] border border-border/40 text-center">
