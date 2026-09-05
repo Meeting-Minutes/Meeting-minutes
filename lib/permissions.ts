@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, or, ne } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
   memberships,
@@ -24,33 +24,120 @@ export interface OrganizationAccess {
   teamIds: string[];
 }
 
-// Bootstrap an org's founding admin: an org-wide "Admin" role holding every
-// catalog permission except `superuser` (reserved, so admin stays splittable),
-// plus the founder's org-wide membership carrying that role. Shared by org
-// creation, the demo seed, and the one-off backfill so the model stays single.
+// Bootstrap an org's founding roles:
+//   - **Superadmin** — protected (isSystem=true), every catalog permission
+//     INCLUDING superuser. Immutable: its permissions can't be edited and it
+//     can't be renamed or deleted. The lockout safety net: at least one org-wide
+//     member always holds it (see superadmin-holder guards).
+//   - **Admin** — editable top role, every catalog permission except superuser.
+//   - **Secretary** — editable default minute-taker role (create/edit/export,
+//     tags + templates).
+//   - **Member** — editable default participant role (export only).
+// All non-system roles can be renamed, deleted, or re-permissioned per org.
+// The founder carries the Superadmin membership org-wide (one org-wide
+// membership per user per org, so the other roles start unassigned).
+// Shared by org creation and the demo seed so the model stays single.
+const SECRETARY_DEFAULT_PERMS = [
+  "create_meeting",
+  "edit_meeting",
+  "export_minutes",
+  "manage_tags",
+  "manage_templates",
+];
+const MEMBER_DEFAULT_PERMS = ["export_minutes"];
+
+async function createRoleWithPerms(
+  orgId: string,
+  name: string,
+  isSystem: boolean,
+  permissionIds: string[],
+): Promise<string> {
+  const [role] = await db
+    .insert(roles)
+    .values({ id: randomUUID(), name, orgId, isSystem })
+    .returning();
+  await db.insert(rolePermissions).values(
+    permissionIds.map((permissionId) => ({ roleId: role.id, permissionId })),
+  );
+  return role.id;
+}
+
 export async function bootstrapOrgAdmin(
   orgId: string,
   userId: string,
 ): Promise<void> {
-  const adminPerms = await db
-    .select({ id: permissions.id })
-    .from(permissions)
-    .where(ne(permissions.key, "superuser"));
-  if (adminPerms.length === 0) {
+  const allPerms = await db
+    .select({ id: permissions.id, key: permissions.key })
+    .from(permissions);
+  if (allPerms.length === 0) {
     throw new Error("Permission catalog is empty; run the seed");
   }
-  const [adminRole] = await db
-    .insert(roles)
-    .values({ id: randomUUID(), name: "Admin", orgId })
-    .returning();
-  await db.insert(rolePermissions).values(
-    adminPerms.map((p) => ({ roleId: adminRole.id, permissionId: p.id })),
+  // Unknown keys (catalog evolution) are skipped rather than erroring.
+  const idByKey = new Map(allPerms.map((p) => [p.key, p.id]));
+  const ids = (keys: string[]) =>
+    keys.flatMap((k) => idByKey.get(k) ?? []);
+
+  const superId = await createRoleWithPerms(
+    orgId,
+    "Superadmin",
+    true,
+    allPerms.map((p) => p.id),
   );
+  await createRoleWithPerms(
+    orgId,
+    "Admin",
+    false,
+    allPerms.filter((p) => p.key !== "superuser").map((p) => p.id),
+  );
+  await createRoleWithPerms(orgId, "Secretary", false, ids(SECRETARY_DEFAULT_PERMS));
+  await createRoleWithPerms(orgId, "Member", false, ids(MEMBER_DEFAULT_PERMS));
+
   await db.insert(memberships).values({
     userId,
     organizationId: orgId,
-    roleId: adminRole.id,
+    teamId: null,
+    roleId: superId,
   });
+}
+
+/** The org's protected (system) Superadmin role id, if one exists. */
+export async function getOrgSuperadminRoleId(
+  orgId: string,
+): Promise<string | null> {
+  const [role] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.orgId, orgId), eq(roles.isSystem, true)))
+    .limit(1);
+  return role?.id ?? null;
+}
+
+export async function isSystemRole(roleId: string): Promise<boolean> {
+  const [role] = await db
+    .select({ isSystem: roles.isSystem })
+    .from(roles)
+    .where(eq(roles.id, roleId))
+    .limit(1);
+  return role?.isSystem ?? false;
+}
+
+/** Count of org-wide members currently holding the org's Superadmin role. */
+export async function countSuperadminHolders(
+  orgId: string,
+): Promise<number> {
+  const superadminRoleId = await getOrgSuperadminRoleId(orgId);
+  if (!superadminRoleId) return 0;
+  const rows = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.organizationId, orgId),
+        isNull(memberships.teamId),
+        eq(memberships.roleId, superadminRoleId),
+      ),
+    );
+  return rows.length;
 }
 
 export async function resolveOrganizationAccess(

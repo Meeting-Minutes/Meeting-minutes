@@ -649,15 +649,19 @@ export default function Home() {
       {/* Channel sidebar */}
       <aside className="w-60 bg-bg-secondary flex flex-col shrink-0">
         <div className="h-12.25 flex items-center px-4 border-b border-border/50 shrink-0 relative">
+          {activeOrg ? (
           <button
             onClick={() => { setActiveTeamId(null); setShowOrgMenu((v) => !v); }}
             className="text-[15px] font-semibold text-text-normal truncate hover:text-accent transition-colors w-full text-left flex items-center justify-between gap-2"
           >
-            <span className="truncate">{activeOrg?.name || "Minutes"}</span>
+            <span className="truncate">{activeOrg.name}</span>
             <svg className="w-4 h-4 text-text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <path d="M3 6l5 5 5-5" />
             </svg>
           </button>
+          ) : (
+          <span className="text-[15px] font-semibold text-text-normal truncate w-full">Minutes</span>
+          )}
           {showOrgMenu && activeOrg && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowOrgMenu(false)} />

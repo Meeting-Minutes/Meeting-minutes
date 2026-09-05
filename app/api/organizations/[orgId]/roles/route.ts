@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { roles } from "@/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessOrganization, canManageOrgRoles } from "@/lib/permissions";
+import { canAccessOrganization, canManageOrgRoles, isSystemRole } from "@/lib/permissions";
 
 export async function GET(
   _req: Request,
@@ -72,6 +72,13 @@ export async function PATCH(
     return NextResponse.json({ error: "roleId is required" }, { status: 400 });
   }
 
+  if (await isSystemRole(roleId)) {
+    return NextResponse.json(
+      { error: "Superadmin is a protected role and cannot be renamed" },
+      { status: 400 },
+    );
+  }
+
   const [role] = await db
     .update(roles)
     .set({ name })
@@ -99,6 +106,13 @@ export async function DELETE(
 
   if (!roleId) {
     return NextResponse.json({ error: "roleId is required" }, { status: 400 });
+  }
+
+  if (await isSystemRole(roleId)) {
+    return NextResponse.json(
+      { error: "Superadmin is a protected role and cannot be deleted" },
+      { status: 400 },
+    );
   }
 
   await db

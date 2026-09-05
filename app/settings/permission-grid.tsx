@@ -13,8 +13,38 @@ export function PermissionGrid({
   onToggle: (permId: string, on: boolean) => void;
   readOnly?: boolean;
 }) {
+  const allOn = perms.length > 0 && perms.every((p) => selected.includes(p.id));
+
+  function toggleAll() {
+    const next = !allOn;
+    for (const p of perms) onToggle(p.id, next);
+  }
+
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+    <div>
+      {!readOnly && perms.length > 0 && (
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="mb-3 flex items-center gap-2 text-xs font-semibold text-text-muted hover:text-text-normal transition-colors select-none"
+        >
+          <span
+            className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+              allOn
+                ? "bg-accent border-accent text-white"
+                : "border-border bg-bg-input"
+            }`}
+          >
+            {allOn && (
+              <svg className="w-2.5 h-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="2 6 5 9 10 3" />
+              </svg>
+            )}
+          </span>
+          {allOn ? "Clear all" : "Select all"}
+        </button>
+      )}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
       {perms.map((p, i) => {
         const on = selected.includes(p.id);
         return (
@@ -47,6 +77,7 @@ export function PermissionGrid({
           </label>
         );
       })}
+      </div>
     </div>
   );
 }

@@ -97,6 +97,7 @@ A user row is **global** — one person, one row, regardless of how many orgs th
 | org_id | uuid FK → organizations | a role belongs to exactly one org |
 | team_id | uuid FK → teams, **nullable** | null = org-wide role; set = role is scoped to that specific sub-committee |
 | name | text | e.g. "Secretary", "Coordinator" — cosmetic, org-chosen |
+| is_system | boolean, default false | true = protected role (the org's Superadmin) — immutable, permissions can't be edited |
 | created_at | timestamp | |
 
 A role's scope (org-wide vs. team-scoped) is part of its identity: `team_id IS NULL` means the role applies everywhere in the org; `team_id = <team>` means the role only exists in that sub-committee's context. The same `role_permissions` table serves both scopes — permissions attach to the role regardless of scope.
@@ -309,7 +310,13 @@ If `X` is in that result set, allow. This single query is the whole authorizatio
 - **A role belongs to one org.** Two different orgs can both have a role called "Secretary" with completely different permission sets — they're different rows, no shared identity beyond the name string.
 - **A role is optionally scoped to one team.** `roles.team_id IS NULL` = org-wide role; `roles.team_id = <team>` = sub-committee role that exists only in that team's context (e.g. a "Lead" or "Coordinator" per sub-committee, each independently named and permissioned). Managing a team's scoped roles requires `manage_team_roles` on that team (or `manage_roles` org-wide) — this is what lets sub-committees operate semi-independently from the org role set.
 - **Assignment is via `memberships`**, scoped optionally to a team. This is also how "admin currently == the top role, separable later" works: initially you might have one very broad role assigned org-wide, and later split it into two roles with narrower permission sets — no schema change required, just new rows in `roles`/`role_permissions` and updated `memberships`.
-- **Founding an org** (open to any user — an org is like a server) auto-creates a single bootstrap **Admin** role carrying **every permission in the catalog except `superuser`** and grants the founder that role as an org-wide membership. `superuser` is excluded on purpose: the founder stays a normal, editable role rather than an implicitly god-tier one, so other roles can be carved out of it over time without restructuring. The grant is computed from the catalog at creation time (not a static list), so a newly added permission automatically reaches new orgs' admins.
+- **Founding an org** (open to any user — an org is like a server) auto-creates four org-wide roles and grants the founder the protected one as an org-wide membership:
+  - **Superadmin** — a *protected* role (`roles.is_system = true`). It carries **every permission in the catalog including `superuser`**, and its permissions can't be edited and the role can't be renamed or deleted. This is the lockout safety net: the invariant is that an org always has at least one org-wide member holding Superadmin, so someone can never strip all admin access from an org.
+  - **Admin** — the normal editable top role holding every catalog permission *except* `superuser` (reserved, so admin stays splittable). Other roles can be carved out of it over time without restructuring.
+  - **Secretary** — editable default minute-taker: `create_meeting`, `edit_meeting`, `export_minutes`, `manage_tags`, `manage_templates`.
+  - **Member** — editable default participant: `export_minutes`.
+  - Only Superadmin is protected; Admin, Secretary, and Member can all be renamed, deleted, or re-permissioned per org.
+  - The grants are computed from the catalog at creation time (not a static list), so a newly added permission automatically reaches new orgs' Superadmin/Admin.
 
 ---
 

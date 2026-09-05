@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { roles, rolePermissions, permissions } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getCurrentUser } from "@/lib/auth";
-import { canManageOrgRoles, canManageTeamRoles } from "@/lib/permissions";
+import { canManageOrgRoles, canManageTeamRoles, isSystemRole } from "@/lib/permissions";
 
 async function assertCanManageRole(userId: string, orgId: string, roleId: string) {
   const [role] = await db
@@ -59,6 +59,13 @@ export async function POST(
   const denied = await assertCanManageRole(user.id, orgId, roleId);
   if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
 
+  if (await isSystemRole(roleId)) {
+    return NextResponse.json(
+      { error: "Superadmin is a protected role — its permissions cannot be changed" },
+      { status: 400 },
+    );
+  }
+
   const { permissionId } = await req.json();
 
   if (!permissionId) {
@@ -88,6 +95,13 @@ export async function DELETE(
   const { orgId, roleId } = await params;
   const denied = await assertCanManageRole(user.id, orgId, roleId);
   if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
+
+  if (await isSystemRole(roleId)) {
+    return NextResponse.json(
+      { error: "Superadmin is a protected role — its permissions cannot be changed" },
+      { status: 400 },
+    );
+  }
 
   const { permissionId } = await req.json();
 
