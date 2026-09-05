@@ -8,6 +8,8 @@ import {
   resolveOrganizationAccess,
   hasPermission,
   validateRole,
+  getOrgSuperadminRoleId,
+  countSuperadminHolders,
 } from "@/lib/permissions";
 import { resolveInviteTargets } from "@/lib/invitations";
 import { emailInviteLinks } from "@/lib/email";
@@ -197,6 +199,27 @@ export async function PATCH(
     conditions.push(isNull(memberships.teamId));
   }
 
+  // Lockout guard: demoting an ORG-WIDE Superadmin holder away from the
+  // Superadmin role must not leave the org with zero Superadmin holders.
+  // (Team-scoped demotions never touch org-wide holders, so nothing to guard.)
+  const superadminRoleId = await getOrgSuperadminRoleId(orgId);
+  if (superadminRoleId && !teamId && role.roleId !== superadminRoleId) {
+    const [target] = await db
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(and(...conditions, eq(memberships.roleId, superadminRoleId)))
+      .limit(1);
+    if (target) {
+      const others = await countSuperadminHolders(orgId);
+      if (others <= 1) {
+        return NextResponse.json(
+          { error: "Cannot demote the last Superadmin — the org would lose all admin access." },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const [membership] = await db
     .update(memberships)
     .set({ roleId: role.roleId })
@@ -281,6 +304,31 @@ export async function DELETE(
     eq(memberships.organizationId, orgId),
   ];
   if (all === true && userId === currentUser.id) {
+    // Lockout guard: leaving the org entirely can't drop the last Superadmin.
+    const superadminRoleId = await getOrgSuperadminRoleId(orgId);
+    if (superadminRoleId) {
+      const [holds] = await db
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.userId, userId),
+            eq(memberships.organizationId, orgId),
+            isNull(memberships.teamId),
+            eq(memberships.roleId, superadminRoleId),
+          ),
+        )
+        .limit(1);
+      if (holds) {
+        const others = await countSuperadminHolders(orgId);
+        if (others <= 1) {
+          return NextResponse.json(
+            { error: "Cannot leave — you are the last Superadmin. Assign Superadmin to someone else first." },
+            { status: 400 },
+          );
+        }
+      }
+    }
     await db.delete(memberships).where(and(...conditions));
     return NextResponse.json({ success: true });
   }
@@ -288,6 +336,25 @@ export async function DELETE(
     conditions.push(eq(memberships.teamId, teamId));
   } else {
     conditions.push(isNull(memberships.teamId));
+  }
+
+  // Lockout guard: removing an org-wide member who is the last Superadmin.
+  const superadminRoleId2 = await getOrgSuperadminRoleId(orgId);
+  if (superadminRoleId2 && !teamId) {
+    const [target] = await db
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(and(...conditions, eq(memberships.roleId, superadminRoleId2)))
+      .limit(1);
+    if (target) {
+      const others = await countSuperadminHolders(orgId);
+      if (others <= 1) {
+        return NextResponse.json(
+          { error: "Cannot remove the last Superadmin — the org would lose all admin access." },
+          { status: 400 },
+        );
+      }
+    }
   }
 
   await db.delete(memberships).where(and(...conditions));

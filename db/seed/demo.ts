@@ -121,8 +121,8 @@ async function ensureShare(minutesId: string, token: string, email: string | nul
 }
 
 // Repair drift from manual member removal: every demo org keeps its founder as
-// an org-wide Admin. Checked explicitly (not onConflictDoNothing) so we don't
-// rely on a unique constraint existing.
+// an org-wide member holding the protected Superadmin (one org-wide membership
+// per user per org). Legacy orgs without a Superadmin role fall back to Admin.
 async function ensureFounderAdmin(orgId: string, userId: string) {
   const [m] = await db
     .select({ id: memberships.id })
@@ -130,12 +130,19 @@ async function ensureFounderAdmin(orgId: string, userId: string) {
     .where(and(eq(memberships.organizationId, orgId), eq(memberships.userId, userId), isNull(memberships.teamId)))
     .limit(1);
   if (m) return;
+  const [superRole] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(and(eq(roles.orgId, orgId), eq(roles.name, "Superadmin"), isNull(roles.teamId)))
+    .limit(1);
   const [adminRole] = await db
     .select({ id: roles.id })
     .from(roles)
     .where(and(eq(roles.orgId, orgId), eq(roles.name, "Admin"), isNull(roles.teamId)))
     .limit(1);
-  await db.insert(memberships).values({ userId, organizationId: orgId, teamId: null, roleId: adminRole?.id ?? null });
+  const role = superRole ?? adminRole;
+  if (!role) return;
+  await db.insert(memberships).values({ userId, organizationId: orgId, teamId: null, roleId: role.id });
 }
 
 async function deleteMeeting(meetingId: string) {

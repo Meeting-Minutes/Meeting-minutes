@@ -13,6 +13,7 @@
     "db:check": "bun run scripts/check-db.ts",
     "db:check:clustering": "bun run lib/clustering.check.ts",
     "db:check:shares": "bun run lib/shares.check.ts",
+    "db:check:superadmin": "bun run lib/superadmin.check.ts",
     "check:date": "bun run lib/nepali-date.check.ts",
     "check:feed": "bun run scripts/check-dashboard-feed.ts",
     "db:seed": "bun run db/seed/index.ts",

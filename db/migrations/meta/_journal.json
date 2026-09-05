@@ -85,6 +85,13 @@
       "when": 1787555882188,
       "tag": "0011_wandering_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788265992351,
+      "tag": "0012_swift_wolfpack",
+      "breakpoints": true
     }
   ]
 }

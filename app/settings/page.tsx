@@ -9,7 +9,7 @@ import TeamsTab from "./teams-tab";
 import { useMyPermissions } from "../use-my-permissions";
 
 type Org = { id: string; name: string; description?: string | null; slug: string };
-type Role = { id: string; name: string; orgId: string; teamId: string | null };
+type Role = { id: string; name: string; orgId: string; teamId: string | null; isSystem?: boolean };
 type Perm = { id: string; key: string; description: string | null };
 type Member = {
   id: string;
@@ -265,7 +265,7 @@ function SettingsContent() {
           ].map(([key, label]) => (
             <button
               key={key}
-              onClick={() => setTab(key)}
+              onClick={() => { setTab(key); setError(""); }}
               className={`relative group text-left px-3 py-2.5 rounded-xl text-sm transition-all duration-200 ${
                 tab === key
                   ? "bg-gradient-to-r from-surface to-surface/60 text-text-normal shadow-sm"
@@ -498,9 +498,16 @@ function RolesTab({
                 >
                   {r.name.charAt(0).toUpperCase()}
                 </span>
-                <span className="truncate">{r.name}</span>
+                <span className="truncate flex items-center gap-1.5">
+                  {r.name}
+                  {r.isSystem && (
+                    <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full bg-success/15 text-success border border-success/25 font-medium">
+                      Protected
+                    </span>
+                  )}
+                </span>
               </span>
-              {canManage && (
+              {canManage && !r.isSystem && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onDeleteRole(r.id); }}
                   className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-danger transition-all duration-200 text-xs px-1"
@@ -539,6 +546,11 @@ function RolesTab({
           {selectedRole ? (
             <span className="flex items-center gap-2">
               {selectedRole.name}
+              {selectedRole.isSystem && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-success/15 text-success border border-success/25 font-medium">
+                  Protected — always has full access
+                </span>
+              )}
               <span className="text-sm font-normal text-text-muted">permissions</span>
             </span>
           ) : (
@@ -549,7 +561,7 @@ function RolesTab({
           <PermissionGrid
             perms={perms}
             selected={selectedPerms}
-            readOnly={!canManage}
+            readOnly={!canManage || !!selectedRole.isSystem}
             onToggle={(permId, on) => onTogglePermission(selectedRole.id, permId, on)}
           />
         )}
